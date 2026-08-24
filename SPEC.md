@@ -64,11 +64,12 @@ or does without search. There is no alternative backend available to the agent.
 ### Approach
 
 Replace the SearXNG-backed `web_search` tool with a local pi extension that
-queries independent engines directly. mwmbl (a bot-friendly, keyless, open-
-source index) is the primary engine; Mojeek (UK-based, authenticated via API
-key) is the fallback when mwmbl returns nothing. The tool also re-provides
-`fetch_content` and `get_search_results` so the `pi-searxng` dependency can be
-dropped entirely.
+queries independent engines directly. mwmbl (a bot-friendly, open-source,
+keyless index) is the primary engine; Mojeek (UK-based, authenticated via API
+key) is the first fallback, and marginalia (a curated, non-commercial index;
+keyed, defaulting to the shared `public` key) is the second fallback. The tool
+also re-provides `fetch_content` and `get_search_results` so the `pi-searxng`
+dependency can be dropped entirely.
 
 ### Key Concepts
 
@@ -82,9 +83,13 @@ dropped entirely.
 
 ### Mental Model
 
-A single `search()` call fans out to at most two engines in priority order
-(mwmbl, then Mojeek) and returns one normalised list. Callers — the `web_search`
-tool — never know or care which engine produced a result.
+A single `search()` call fans out to engines in priority order (mwmbl, then
+Mojeek, then marginalia), stopping at the first engine that returns a
+non-empty list, and returns one normalised list. Callers — the `web_search`
+tool — never know or care which engine produced a result. Each engine is
+queried only when every higher-priority engine returned zero results, and only
+engines whose key is available are consulted (mwmbl works keyless; marginalia
+defaults to the `public` key).
 
 ### Assumptions & Risks
 
@@ -177,23 +182,29 @@ Engine endpoints:
 
 | Engine | Request | Response |
 |---|---|---|
-| mwmbl | `GET https://mwmbl.org/api/v1/search?s=<query>` | JSON array of `{ url, title: [{value,is_bold},...], extract: [{value,is_bold},...], source }` |
+| mwmbl | `GET https://mwmbl.org/api/v2/search/?q=<query>` | `{ query, number_of_results, results: [{ url, title, title_highlights, content, content_highlights, engine, score }, ...], monthly_usage, monthly_limit }` |
 | mojeek | `GET https://www.mojeek.com/search?q=<query>&fmt=json&api_key=<KEY>` | `{ response: { head: {...}, results: [{ url, title, desc }, ...] } }` |
+| marginalia | `GET https://api.marginalia.nu/<KEY>/search/<query>?format=json&index=0&count=<n>` | `{ license, page, pages, query, results: [{ url, title, description, quality, ... }, ...] }` |
 
 Normalisation:
 
-- mwmbl — `title` and `snippet` are arrays of segments; concatenate `.value`
-  in order to form plain text.
+- mwmbl — `title` -> `title`; `content` -> `snippet` (the v2 API already returns
+  plain concatenated text, superseding the v1 segment-array format).
 - mojeek — `title` -> `title`; `desc` -> `snippet`.
+- marginalia — `title` -> `title`; `description` -> `snippet`.
 
 ### Constraints
 
-- The Mojeek API key MUST be read from the environment variable `MOJEEK_API_KEY`
-  and MUST NOT be committed, logged, or returned in tool output.
+- Engine API keys MUST be read from environment variables (`MOJEEK_API_KEY`,
+  `MARGINALIA_API_KEY`) and MUST NOT be committed, logged, or returned in tool
+  output.
 - The Mojeek engine MUST NOT be queried when `MOJEEK_API_KEY` is unset; mwmbl
-  remains the sole engine in that case.
-- mwmbl MUST be the primary engine; Mojeek MUST be queried only when mwmbl
-  returns zero results for a query.
+  and marginalia remain available in that case.
+- mwmbl MUST be the primary engine and is queried keyless (mwmbl exposes no
+  search-scoped API key). Mojeek is queried only when mwmbl returns zero
+  results; marginalia only when both mwmbl and Mojeek return zero results.
+- marginalia MAY be queried with the shared `public` key when
+  `MARGINALIA_API_KEY` is unset.
 - Both engines' output MUST be normalised to `SearchResult[]` before leaving
   the extension (the caller has no knowledge of the source).
 - Result URLs MUST be preserved verbatim (no rewriting, no tracking stripping).
@@ -206,11 +217,11 @@ Normalisation:
 
 | Condition | Behaviour |
 |---|---|
-| mwmbl returns zero results | Query Mojeek (if key set) and return its results |
-| both engines return zero | Return `No results found.` |
+| mwmbl returns zero results | Query Mojeek (if key set), then marginalia |
+| all engines return zero | Return `No results found.` |
 | Mojeek reachable but `head` status is an error (e.g. daily limit reached) | Treat as zero results; do not crash |
-| `MOJEEK_API_KEY` unset | Skip Mojeek; mwmbl only |
-| Network failure / non-2xx from an engine | Treat that engine as zero results; try the other |
+| `MOJEEK_API_KEY` unset | Skip Mojeek; mwmbl + marginalia only |
+| Network failure / non-2xx from an engine | Treat that engine as zero results; try the next |
 | `get_search_results` with an unknown ID | Return `Search not found.` |
 | fetch of a URL fails | Return the error message as text |
 
@@ -255,8 +266,11 @@ web_search({ query: "obscure foo" })   // MOJEEK_API_KEY unset
 
 ---
 
-*Version: 1.0 | Updated: 2026-08-24*
+*Version: 1.1 | Updated: 2026-08-24*
 
 ## Changelog
 
+- 1.1 (2026-08-24): Added marginalia as a third fallback engine; moved mwmbl
+  to the v2 API (`/api/v2/search/`, returning plain concatenated
+  `title`/`content` text); documented `MARGINALIA_API_KEY` (default `public`).
 - 1.0 (2026-08-24): Initial specification.

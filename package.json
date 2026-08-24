@@ -1,0 +1,38 @@
+{
+  "name": "pi-websearch",
+  "version": "1.0.0",
+  "description": "Web search tools for pi, backed by independent engines (mwmbl + Mojeek + marginalia) instead of a shared SearXNG instance",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "web-search",
+    "mwmbl",
+    "mojeek",
+    "marginalia",
+    "github"
+  ],
+  "license": "MIT",
+  "files": [
+    "src",
+    "package.json",
+    "README.md"
+  ],
+  "dependencies": {
+    "@mozilla/readability": "^0.5.0",
+    "linkedom": "^0.16.0",
+    "turndown": "^7.2.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}
