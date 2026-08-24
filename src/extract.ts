@@ -46,10 +46,27 @@ export async function fetchContent(
       return { url, title: "", content: "", error: "Content too large" };
     }
 
+    const contentType = res.headers.get("content-type") ?? "";
     const html = await res.text();
+
+    // Guard: only parse bodies that look like HTML/XML. Anything else
+    // (json, binary, redirect bodies, ...) gets a clean extraction error
+    // rather than Readability's raw internal error.
+    if (contentType && !contentType.includes("html") && !contentType.includes("xml")) {
+      return { url, title: "", content: "", error: "Could not extract content" };
+    }
+
     const { document } = parseHTML(html);
-    const reader = new Readability(document);
-    const article = reader.parse();
+    if (!document?.documentElement) {
+      return { url, title: "", content: "", error: "Could not extract content" };
+    }
+
+    let article;
+    try {
+      article = new Readability(document).parse();
+    } catch {
+      return { url, title: "", content: "", error: "Could not extract content" };
+    }
 
     if (!article) {
       return { url, title: "", content: "", error: "Could not extract content" };

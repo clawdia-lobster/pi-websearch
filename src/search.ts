@@ -28,6 +28,11 @@ export interface Engine {
  */
 const engines: Engine[] = [searchMwmbl, searchMojeek, searchMarginalia];
 
+// Hard per-engine budget: some engines (marginalia with certain queries,
+// rate-limited public keys) stall connections indefinitely. Without this,
+// one stalled engine would wedge the whole search forever.
+const ENGINE_TIMEOUT_MS = 15000;
+
 export async function search(
   query: string,
   limit = 10,
@@ -40,7 +45,10 @@ export async function search(
     queried.push(engine.name);
 
     try {
-      const results = await engine.search(query, signal);
+      const engineSignal = AbortSignal.any(
+        [AbortSignal.timeout(ENGINE_TIMEOUT_MS), ...(signal ? [signal] : [])],
+      );
+      const results = await engine.search(query, engineSignal);
       if (results.length > 0) {
         return {
           results: results.slice(0, limit),
