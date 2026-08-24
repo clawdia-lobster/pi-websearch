@@ -26,3 +26,8 @@ Keys are read only from the environment and are never committed, logged, or
 returned in tool output.
 
 See [SPEC.md](SPEC.md) for the system specification.
+
+## License
+
+MIT. Derived in part from [pi-searxng](https://github.com/jcha0713/pi-searxng)
+(`index.ts`, `extract.ts`, `github.ts`), also MIT licensed. See [LICENSE](LICENSE).

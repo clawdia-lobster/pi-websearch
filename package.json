@@ -16,7 +16,8 @@
   "files": [
     "src",
     "package.json",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "dependencies": {
     "@mozilla/readability": "^0.5.0",

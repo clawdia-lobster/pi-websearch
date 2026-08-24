@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Derived from pi-searxng (https://github.com/jcha0713/pi-searxng), MIT licensed.
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
