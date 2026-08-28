@@ -42,6 +42,7 @@ function formatRepoFiles(files: { path: string }[]): string {
 interface WebSearchParams {
   query: string;
   limit?: number;
+  engines?: string[];
 }
 
 interface FetchContentParams {
@@ -57,11 +58,17 @@ export default function (pi: ExtensionAPI) {
     name: "web_search",
     label: "Web Search",
     description:
-      "Search the web using independent engines (mwmbl, Mojeek, marginalia), with a SearXNG instance as final fallback",
+      "Search the web using independent engines (mwmbl, Mojeek, marginalia), with a SearXNG meta-engine as final fallback. Pass engines (e.g. [\"mwmbl\",\"searxng\"]) to query exactly those engines and merge their results -- useful when default results are thin or stale",
     parameters: Type.Object({
       query: Type.String({ description: "Search query" }),
       limit: Type.Optional(
         Type.Number({ description: "Max results", default: 10 }),
+      ),
+      engines: Type.Optional(
+        Type.Array(Type.String(), {
+          description:
+            "Query exactly these engines (any of: mwmbl, mojeek, marginalia, searxng) and merge their results instead of running the fallback chain. Default: fallback chain (mwmbl, then mojeek, then marginalia, then searxng)",
+        }),
       ),
     }),
 
@@ -72,7 +79,11 @@ export default function (pi: ExtensionAPI) {
 
       try {
         const limit = params.limit ?? 10;
-        const { results, engines } = await search(params.query, limit, signal);
+        const { results, engines } = await search(params.query, {
+          limit,
+          signal,
+          engines: params.engines,
+        });
         const searchId = generateId();
         searchCache.set(searchId, {
           query: params.query,

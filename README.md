@@ -1,15 +1,22 @@
 # pi-websearch
 
 Web search for pi that talks to independent engines -- mwmbl, Mojeek, and
-marginalia -- rather than a shared SearXNG instance. It provides three tools,
-`web_search`, `fetch_content`, and `get_search_results`, and is a drop-in
-replacement for `pi-searxng`.
+marginalia -- with an optional SearXNG instance as final fallback. It provides
+three tools, `web_search`, `fetch_content`, and `get_search_results`, and is a
+drop-in replacement for `pi-searxng`.
 
 ## Engines
 
-Search fans out to the engines in priority order and stops at the first that
-returns results. mwmbl is tried first, then Mojeek, then marginalia, then
-SearXNG.
+By default search fans out to the engines in priority order and stops at the
+first that returns results: mwmbl, then Mojeek, then marginalia, then SearXNG.
+
+The caller can instead select exactly which engines to query by passing
+`engines` to `web_search`, e.g. `["mwmbl", "searxng"]` to skip marginalia.
+Every selected engine is queried and results are merged with round-robin
+interleaving (deduplicated by URL), so each engine contributes; one engine's
+zero results or network failure does not prevent the others from answering.
+Unknown or unconfigured engine names raise an error rather than being skipped
+silently.
 
 - **mwmbl** works without a key.
 - **Mojeek** needs `MOJEEK_API_KEY`; it is skipped when that variable is unset.

@@ -95,6 +95,12 @@ queried only when every higher-priority engine returned zero results, and only
 engines whose key is available are consulted (mwmbl works keyless; marginalia
 defaults to the `public` key; searxng requires `SEARXNG_URL`).
 
+The caller may instead select an exact engine subset (`engines` parameter):
+every selected engine is queried and results merged round-robin, deduplicated
+by URL. This exists for the "independent engines answered, but thinly" case —
+e.g. mwmbl returns two weak hits for a fresh-news query — letting the agent
+pull in searxng's breadth on demand without making it the default path.
+
 ### Assumptions & Risks
 
 - **mwmbl coverage is narrower than Brave/Google** for recent news and long-tail
@@ -177,9 +183,11 @@ SearchResult = {
 Registered tools (pi `registerTool`):
 
 ```typescript
-web_search({ query: string, limit?: number })
+web_search({ query: string, limit?: number, engines?: string[] })
   // -> text: numbered markdown list of results, or "No results found."
   // -> details: { resultCount, query, engines: string[] }
+  // engines: query exactly these engines and merge results (round-robin,
+  //    deduped by URL); default is the fallback chain
 
 fetch_content({ url: string })
   // -> text: readability-extracted body, or cloned-repo file listing for GitHub URLs
