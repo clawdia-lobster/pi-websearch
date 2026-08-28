@@ -57,7 +57,7 @@ export default function (pi: ExtensionAPI) {
     name: "web_search",
     label: "Web Search",
     description:
-      "Search the web using independent engines (mwmbl, Mojeek, marginalia)",
+      "Search the web using independent engines (mwmbl, Mojeek, marginalia), with a SearXNG instance as final fallback",
     parameters: Type.Object({
       query: Type.String({ description: "Search query" }),
       limit: Type.Optional(

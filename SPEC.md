@@ -67,9 +67,13 @@ Replace the SearXNG-backed `web_search` tool with a local pi extension that
 queries independent engines directly. mwmbl (a bot-friendly, open-source,
 keyless index) is the primary engine; Mojeek (UK-based, authenticated via API
 key) is the first fallback, and marginalia (a curated, non-commercial index;
-keyed, defaulting to the shared `public` key) is the second fallback. The tool
-also re-provides `fetch_content` and `get_search_results` so the `pi-searxng`
-dependency can be dropped entirely.
+keyed, defaulting to the shared `public` key) is the second fallback. A
+SearXNG instance (pointed at via `SEARXNG_URL`) is the final fallback: it is
+added back deliberately (2026-08-28, user request), but only as a last resort
+-- a meta-engine re-introduces the shared-egress coupling this package
+removed, so it answers only when every independent engine came up empty. The
+tool also re-provides `fetch_content` and `get_search_results` so the
+`pi-searxng` dependency can be dropped entirely.
 
 ### Key Concepts
 
@@ -84,12 +88,12 @@ dependency can be dropped entirely.
 ### Mental Model
 
 A single `search()` call fans out to engines in priority order (mwmbl, then
-Mojeek, then marginalia), stopping at the first engine that returns a
-non-empty list, and returns one normalised list. Callers — the `web_search`
+Mojeek, then marginalia, then searxng), stopping at the first engine that
+returns a non-empty list, and returns one normalised list. Callers — the `web_search`
 tool — never know or care which engine produced a result. Each engine is
 queried only when every higher-priority engine returned zero results, and only
 engines whose key is available are consulted (mwmbl works keyless; marginalia
-defaults to the `public` key).
+defaults to the `public` key; searxng requires `SEARXNG_URL`).
 
 ### Assumptions & Risks
 
@@ -108,6 +112,12 @@ defaults to the `public` key).
 - **The Mojeek API shape is stable.** The spec pins the observed response shape
   (`response.results[]` with `url`/`title`/`desc`). If Mojeek changes this
   schema, normalisation breaks and must be updated.
+- **SearXNG's JSON output must stay enabled** on the target instance
+  (`search.formats` includes `json`), and the instance's upstream engines must
+  not all be rate-limit-suspended. As the final fallback, its failure degrades
+  to "empty result" and behaves no worse than the pre-package `pi-searxng`
+  setup, but it re-introduces shared-egress coupling; volume stays low
+  precisely because only emptied-out queries reach it.
 
 ### Boundaries
 
@@ -185,6 +195,7 @@ Engine endpoints:
 | mwmbl | `GET https://mwmbl.org/api/v2/search/?q=<query>` | `{ query, number_of_results, results: [{ url, title, title_highlights, content, content_highlights, engine, score }, ...], monthly_usage, monthly_limit }` |
 | mojeek | `GET https://www.mojeek.com/search?q=<query>&fmt=json&api_key=<KEY>` | `{ response: { head: {...}, results: [{ url, title, desc }, ...] } }` |
 | marginalia | `GET https://api.marginalia.nu/<KEY>/search/<query>?format=json&index=0&count=<n>` | `{ license, page, pages, query, results: [{ url, title, description, quality, ... }, ...] }` |
+| searxng | `GET <SEARXNG_URL>?q=<query>&format=json` | `{ query, number_of_results, results: [{ url, title, content, engine, ... }, ...] }` |
 
 Normalisation:
 
@@ -196,8 +207,9 @@ Normalisation:
 ### Constraints
 
 - Engine API keys MUST be read from environment variables (`MOJEEK_API_KEY`,
-  `MARGINALIA_API_KEY`) and MUST NOT be committed, logged, or returned in tool
-  output.
+  `MARGINALIA_API_KEY`, `SEARXNG_API_KEY`) and MUST NOT be committed, logged,
+  or returned in tool output. `SEARXNG_URL` is likewise environment-supplied:
+  private instance hostnames do not belong in this repo.
 - The Mojeek engine MUST NOT be queried when `MOJEEK_API_KEY` is unset; mwmbl
   and marginalia remain available in that case.
 - mwmbl MUST be the primary engine and is queried keyless (mwmbl exposes no

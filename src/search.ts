@@ -1,6 +1,7 @@
 import { searchMwmbl } from "./engines/mwmbl.js";
 import { searchMojeek } from "./engines/mojeek.js";
 import { searchMarginalia } from "./engines/marginalia.js";
+import { searchSearxng } from "./engines/searxng.js";
 
 export interface SearchResult {
   title: string;
@@ -24,9 +25,16 @@ export interface Engine {
  * Engines in priority order. Each is queried only when every higher-priority
  * engine returned zero results. Keyed engines expose `available` based on
  * whether their key is configured (marginalia defaults to the shared "public"
- * key; mwmbl works keyless but uses a key when provided).
+ * key; mwmbl works keyless but uses a key when provided). searxng requires
+ * SEARXNG_URL and sits last: a meta-engine that queries the major upstream
+ * engines, reserved for when the independent engines all come up empty.
  */
-const engines: Engine[] = [searchMwmbl, searchMojeek, searchMarginalia];
+const engines: Engine[] = [
+  searchMwmbl,
+  searchMojeek,
+  searchMarginalia,
+  searchSearxng,
+];
 
 // Hard per-engine budget: some engines (marginalia with certain queries,
 // rate-limited public keys) stall connections indefinitely. Without this,
