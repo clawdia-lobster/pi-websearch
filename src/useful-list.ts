@@ -8,10 +8,11 @@
 import { appendFileSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-// Generic default: the list goes to ./useful-list.txt in the agent's cwd
-// unless USEFUL_LIST_PATH points elsewhere. Deliberately no hardcoded
-// machine/user paths so the source stays portable.
-const DEFAULT_PATH = "useful-list.txt";
+// Generic default: the list goes to ./useful-domains.txt in the agent's cwd
+// unless USEFUL_LIST_PATH points elsewhere. Production sets USEFUL_LIST_PATH
+// to a shared absolute path (see /pi/scripts/agent-setup.sh). Deliberately no
+// hardcoded machine/user paths so the source stays portable.
+const DEFAULT_PATH = "useful-domains.txt";
 
 function listPath(): string {
   return resolve(process.env.USEFUL_LIST_PATH ?? DEFAULT_PATH);
