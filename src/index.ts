@@ -6,6 +6,7 @@ import { Type } from "typebox";
 import { search, type SearchResult } from "./search.js";
 import { fetchContent } from "./extract.js";
 import { isGitHubUrl, cloneRepo } from "./github.js";
+import { recordUseful } from "./useful-list.js";
 
 const searchCache = new Map<
   string,
@@ -177,6 +178,10 @@ export default function (pi: ExtensionAPI) {
           details: { error: result.error },
         };
       }
+
+      // A successfully fetched URL is a hit that was actually used: record its
+      // domain for later batch submission to an independent index.
+      recordUseful(params.url);
 
       const truncated = result.content.length > 30000;
       const content = truncated

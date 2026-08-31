@@ -37,9 +37,21 @@ silently.
 | `MARGINALIA_API_KEY` | marginalia | No, defaults to `public` |
 | `SEARXNG_URL` | searxng | Yes, to use searxng |
 | `SEARXNG_API_KEY` | searxng | No, only for limiter-enabled instances |
+| `USEFUL_LIST_PATH` | useful-list | No, defaults to `./useful-list.txt` |
 
 Keys are read only from the environment and are never committed, logged, or
 returned in tool output.
+
+## Useful-hit list
+
+Whenever `fetch_content` successfully retrieves a page, its domain is appended
+to a flat list (`useful-list.txt` by default, override with `USEFUL_LIST_PATH`).
+The signal is *consumption*, not appearance in results: a URL only qualifies
+once it was actually fetched. Maintainers can batch-submit the accumulated
+domains to an independent index (e.g. `mwmbl-mod add`) so the pages the
+assistant genuinely relied on feed back into the commons. Entries are
+deduplicated, `www.`-stripped, and best-effort -- list writing can never break
+a fetch.
 
 See [SPEC.md](SPEC.md) for the system specification.
 
