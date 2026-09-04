@@ -133,6 +133,10 @@ In scope:
   priority.
 - `fetch_content` tool (URL fetch + GitHub repo clone), carried over unchanged.
 - `get_search_results` tool (retrieve a prior result set by ID).
+- `get_search_content` tool (page through retained fetched content by
+  `responseId`, or locate passages with `findText`).
+- Retention of the full extracted markdown, bounded (500k chars/page, 64 pages,
+  in-memory only).
 - Normalisation of mwmbl and Mojeek responses into a single `SearchResult`
   shape.
 - Configurable Mojeek API key via environment variable.
@@ -191,9 +195,15 @@ web_search({ query: string, limit?: number, engines?: string[] })
 
 fetch_content({ url: string })
   // -> text: readability-extracted body, or cloned-repo file listing for GitHub URLs
+  // -> details: { responseId, ... } -- the retained full-page id for get_search_content
 
 get_search_results({ searchId: string })
   // -> text: the cached result set for a prior web_search, or "Search not found"
+
+get_search_content({ responseId: string, offset?: number, limit?: number, findText?: string, findMode?: "exact" | "case-insensitive" })
+  // -> text: a slice of a retained fetched page (offset/limit, default first 30000 chars),
+  //    or bounded passages around findText matches (case-insensitive by default), or
+  //    "Content not found." for an unknown/evicted id
 ```
 
 Engine endpoints:
@@ -286,10 +296,16 @@ web_search({ query: "obscure foo" })   // MOJEEK_API_KEY unset
 
 ---
 
-*Version: 1.1 | Updated: 2026-08-24*
+*Version: 1.2 | Updated: 2026-09-04*
 
 ## Changelog
 
+- 1.2 (2026-09-04): Added `get_search_content` for bounded retrieval over
+  fetched pages: `fetch_content` now retains the full extracted markdown and
+  returns a `responseId`; `get_search_content` slices it (`offset`/`limit`) or
+  locates passages (`findText`, exact or case-insensitive). No fuzzy matching.
+  Retention is in-memory only (lost on session end), capped per-page and by
+  entry count.
 - 1.1 (2026-08-24): Added marginalia as a third fallback engine; moved mwmbl
   to the v2 API (`/api/v2/search/`, returning plain concatenated
   `title`/`content` text); documented `MARGINALIA_API_KEY` (default `public`).

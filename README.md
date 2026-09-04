@@ -1,9 +1,9 @@
 # pi-websearch
 
 Web search for pi that talks to independent engines -- mwmbl, Mojeek, and
-marginalia -- with an optional SearXNG instance as final fallback. It provides
-three tools, `web_search`, `fetch_content`, and `get_search_results`, and is a
-drop-in replacement for `pi-searxng`.
+marginalia -- with an optional SearXNG instance as final fallback. It provides four tools, `web_search`, `fetch_content`,
+`get_search_results`, and `get_search_content`, and is a drop-in replacement
+for `pi-searxng`.
 
 ## Engines
 
@@ -41,6 +41,23 @@ silently.
 
 Keys are read only from the environment and are never committed, logged, or
 returned in tool output.
+
+## Retrieving fetched content
+
+`fetch_content` shows the first 30 000 characters of an extracted page inline
+and retains the full markdown for the session, so long pages are not silently
+lost. `get_search_content` pages through the retained text:
+
+- `get_search_content({ responseId })` returns the first slice.
+- `get_search_content({ responseId, offset: 30000 })` returns the next slice.
+- `get_search_content({ responseId, limit: 5000 })` returns a shorter slice.
+- `get_search_content({ responseId, findText: "installation" })` returns
+  bounded passages around each match, with a default case-insensitive mode
+  (`findMode: "exact"` for exact matching).
+
+Retention is in-memory only (lost on session end), capped at 500 000 characters
+per page and 64 pages, oldest evicted first. The `responseId` to page by is
+returned in `fetch_content`'s `details`.
 
 ## Useful-hit list
 

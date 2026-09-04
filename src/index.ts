@@ -7,6 +7,14 @@ import { search, type SearchResult } from "./search.js";
 import { fetchContent } from "./extract.js";
 import { isGitHubUrl, cloneRepo } from "./github.js";
 import { recordUseful } from "./useful-list.js";
+import {
+  INLINE_CONTENT_CHARS,
+  storeContent,
+  getContent,
+  sliceContent,
+  findInContent,
+  type FindMode,
+} from "./content.js";
 
 const searchCache = new Map<
   string,
@@ -52,6 +60,14 @@ interface FetchContentParams {
 
 interface GetSearchResultsParams {
   searchId: string;
+}
+
+interface GetSearchContentParams {
+  responseId: string;
+  offset?: number;
+  limit?: number;
+  findText?: string;
+  findMode?: FindMode;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -183,9 +199,18 @@ export default function (pi: ExtensionAPI) {
       // domain for later batch submission to an independent index.
       recordUseful(params.url);
 
-      const truncated = result.content.length > 30000;
+      // Retain the full extracted markdown for later paging / findText, and
+      // show the first INLINE_CONTENT_CHARS inline.
+      const responseId = storeContent(
+        result.title || params.url,
+        result.url,
+        result.content,
+      );
+
+      const truncated = result.content.length > INLINE_CONTENT_CHARS;
       const content = truncated
-        ? result.content.slice(0, 30000) + "\n\n[Content truncated...]"
+        ? result.content.slice(0, INLINE_CONTENT_CHARS) +
+          `\n\n[Content truncated... use get_search_content (responseId: ${responseId}) to page through]`
         : result.content;
 
       return {
@@ -193,6 +218,7 @@ export default function (pi: ExtensionAPI) {
         details: {
           title: result.title,
           url: result.url,
+          responseId,
           truncated,
           length: result.content.length,
         },
@@ -248,6 +274,78 @@ export default function (pi: ExtensionAPI) {
           {
             type: "text",
             text: `Query: "${cached.query}"\n${cached.engines.length ? `Engines: ${cached.engines.join(", ")}\n\n` : "\n"}${formatSearchResults(cached.results)}`,
+          },
+        ],
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "get_search_content",
+    label: "Get Fetched Content",
+    description:
+      "Retrieve a previously fetched page by responseId and page through it (offset/limit) or locate a passage (findText with exact or case-insensitive matching).",
+    parameters: Type.Object({
+      responseId: Type.String({
+        description: "ID returned by fetch_content",
+      }),
+      offset: Type.Optional(
+        Type.Number({ description: "Character offset into the retained content" }),
+      ),
+      limit: Type.Optional(
+        Type.Number({
+          description: "Max chars to return",
+          default: INLINE_CONTENT_CHARS,
+        }),
+      ),
+      findText: Type.Optional(
+        Type.String({
+          description:
+            "Search term; returns matching passages with context instead of a slice",
+        }),
+      ),
+      findMode: Type.Optional(
+        Type.Union([Type.Literal("exact"), Type.Literal("case-insensitive")], {
+          description: "Match mode",
+        }),
+      ),
+    }),
+
+    async execute(_id, params) {
+      const {
+        responseId,
+        offset,
+        limit,
+        findText,
+        findMode,
+      } = params as GetSearchContentParams;
+
+      const entry = getContent(responseId);
+      if (!entry) {
+        return { content: [{ type: "text", text: "Content not found." }] };
+      }
+
+      if (findText !== undefined) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: findInContent(entry.content, findText, findMode ?? "case-insensitive"),
+            },
+          ],
+        };
+      }
+
+      const text = sliceContent(
+        entry.content,
+        offset,
+        limit ?? INLINE_CONTENT_CHARS,
+      );
+      return {
+        content: [
+          {
+            type: "text",
+            text: text === "" ? "(past end of content)" : text,
           },
         ],
       };
