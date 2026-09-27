@@ -1,27 +1,41 @@
 # pi-websearch
 
 Web search for pi that talks to independent engines -- mwmbl, Mojeek, and
-marginalia -- with an optional SearXNG instance as final fallback. It provides four tools, `web_search`, `fetch_content`,
+marginalia -- falling back to keyless DuckDuckGo Lite and then an optional
+SearXNG instance. It provides four tools, `web_search`, `fetch_content`,
 `get_search_results`, and `get_search_content`, and is a drop-in replacement
 for `pi-searxng`.
 
 ## Engines
 
 By default search fans out to the engines in priority order and stops at the
-first that returns results: mwmbl, then Mojeek, then marginalia, then SearXNG.
+first that returns results: mwmbl, then Mojeek, then marginalia, then ddg, then
+SearXNG.
 
 The caller can instead select exactly which engines to query by passing
-`engines` to `web_search`, e.g. `["mwmbl", "searxng"]` to skip marginalia.
+`engines` to `web_search`, e.g. `["mwmbl", "ddg"]` to skip marginalia.
 Every selected engine is queried and results are merged with round-robin
 interleaving (deduplicated by URL), so each engine contributes; one engine's
 zero results or network failure does not prevent the others from answering.
 Unknown or unconfigured engine names raise an error rather than being skipped
 silently.
 
+When an engine fails rather than returning nothing (a suspended upstream, a
+timeout, a bot challenge), the failure is reported after the results as an
+`Engine notes:` line, so an empty answer is never mistaken for "the web has
+nothing on this".
+
 - **mwmbl** works without a key.
 - **Mojeek** needs `MOJEEK_API_KEY`; it is skipped when that variable is unset.
 - **marginalia** uses `MARGINALIA_API_KEY`, falling back to the shared `public`
   key when unset.
+- **ddg** works without a key: DuckDuckGo's Lite HTML endpoint, parsed for
+  result titles, snippets and URLs. It is the mainstream-index fallback, and
+  the only engine that honours `site:` filters. DuckDuckGo is an American
+  advertising engine read through public HTML, so it is queried only after the
+  independent engines come up empty (or on explicit selection); requests are
+  serialised at least `DDG_SEARCH_INTERVAL_MS` apart, and a bot challenge is
+  reported as an engine note rather than retried.
 - **searxng** needs `SEARXNG_URL` (the instance's search endpoint, e.g.
   `https://example.com/search`); it is skipped when unset. It sits last in the
   chain: a SearXNG instance is a meta-engine that queries the major upstream
@@ -37,6 +51,7 @@ silently.
 | `MARGINALIA_API_KEY` | marginalia | No, defaults to `public` |
 | `SEARXNG_URL` | searxng | Yes, to use searxng |
 | `SEARXNG_API_KEY` | searxng | No, only for limiter-enabled instances |
+| `DDG_SEARCH_INTERVAL_MS` | ddg | No, default 2000; minimum 500 |
 | `USEFUL_LIST_PATH` | useful-list | No, defaults to `./useful-domains.txt` |
 
 Keys are read only from the environment and are never committed, logged, or

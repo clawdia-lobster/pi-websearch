@@ -1,6 +1,7 @@
 import { searchMwmbl } from "./engines/mwmbl.js";
 import { searchMojeek } from "./engines/mojeek.js";
 import { searchMarginalia } from "./engines/marginalia.js";
+import { searchDdg } from "./engines/ddg.js";
 import { searchSearxng } from "./engines/searxng.js";
 
 export interface SearchResult {
@@ -13,6 +14,12 @@ export interface SearchResponse {
   results: SearchResult[];
   /** Engine names actually queried, in priority order (the fallback chain executed). */
   engines: string[];
+  /**
+   * Per-engine failures, so an empty or degraded answer is not reported as a
+   * bare "no results": a suspended upstream or a bot challenge is a fact the
+   * caller needs in order to choose a different engine.
+   */
+  notes: string[];
 }
 
 export interface Engine {
@@ -25,14 +32,19 @@ export interface Engine {
  * Engines in priority order. Each is queried only when every higher-priority
  * engine returned zero results. Keyed engines expose `available` based on
  * whether their key is configured (marginalia defaults to the shared "public"
- * key; mwmbl works keyless but uses a key when provided). searxng requires
- * SEARXNG_URL and sits last: a meta-engine that queries the major upstream
- * engines, reserved for when the independent engines all come up empty.
+ * key; mwmbl works keyless but uses a key when provided).
+ *
+ * ddg (keyless DuckDuckGo Lite) is the mainstream index, and searxng the
+ * meta-engine that federates the same upstreams from its own egress; both sit
+ * after the independent engines, which answer the majority of technical,
+ * academic and financial lookups without a shared or advertising-backed path.
+ * searxng stays last because it re-introduces coupling to a shared instance.
  */
 const engines: Engine[] = [
   searchMwmbl,
   searchMojeek,
   searchMarginalia,
+  searchDdg,
   searchSearxng,
 ];
 
@@ -113,22 +125,27 @@ export async function search(
 
     const perEngine: SearchResult[][] = [];
     const queried: string[] = [];
+    const notes: string[] = [];
     for (const engine of chosen) {
       queried.push(engine.name);
       try {
         perEngine.push(await engine.search(query, engineSignal(signal)));
-      } catch {
-        // Runtime failure of one selected engine must not sink the others.
+      } catch (err) {
+        // Runtime failure of one selected engine must not sink the others,
+        // but it is recorded so the caller knows the merge was incomplete.
+        notes.push(note(engine.name, err));
         perEngine.push([]);
       }
     }
     return {
       results: interleave(perEngine).slice(0, limit),
       engines: queried,
+      notes,
     };
   }
 
   const queried: string[] = [];
+  const notes: string[] = [];
 
   for (const engine of engines) {
     if (!engine.available) continue;
@@ -140,13 +157,20 @@ export async function search(
         return {
           results: results.slice(0, limit),
           engines: queried,
+          notes,
         };
       }
-    } catch {
+    } catch (err) {
       // Treat any engine failure (network, parse, quota) as zero results and
-      // fall through to the next engine.
+      // fall through to the next engine -- recording why, so the answer is not
+      // silently reported as "no results".
+      notes.push(note(engine.name, err));
     }
   }
 
-  return { results: [], engines: queried };
+  return { results: [], engines: queried, notes };
+}
+
+function note(engine: string, err: unknown): string {
+  return `${engine}: ${err instanceof Error ? err.message : String(err)}`;
 }

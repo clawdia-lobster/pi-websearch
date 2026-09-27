@@ -21,6 +21,20 @@ interface SearxngResult {
 
 interface SearxngResponse {
   results?: SearxngResult[];
+  // [engine, reason] pairs, or {engine, reason} objects, depending on version.
+  unresponsive_engines?: Array<[string, string] | { engine?: string; reason?: string }>;
+}
+
+function describeUnresponsive(
+  entries: SearxngResponse["unresponsive_engines"],
+): string {
+  return (entries ?? [])
+    .map((entry) =>
+      Array.isArray(entry)
+        ? `${entry[0]}: ${entry[1]}`
+        : `${entry.engine ?? "?"}: ${entry.reason ?? "?"}`,
+    )
+    .join(", ");
 }
 
 export const searchSearxng: Engine = {
@@ -55,6 +69,15 @@ export const searchSearxng: Engine = {
         snippet: (hit.content ?? "").trim(),
       });
     }
+
+    // An empty answer with suspended upstreams is a degraded instance, not a
+    // query with no matches. Report it rather than returning nothing silently:
+    // the caller can pick a different engine, and the operator learns the
+    // instance needs attention.
+    if (out.length === 0 && (data.unresponsive_engines?.length ?? 0) > 0) {
+      throw new Error(`no results; upstream: ${describeUnresponsive(data.unresponsive_engines)}`);
+    }
+
     return out;
   },
 };

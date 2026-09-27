@@ -1,7 +1,7 @@
 {
   "name": "pi-websearch",
-  "version": "1.3.0",
-  "description": "Web search tools for pi, backed by independent engines (mwmbl + Mojeek + marginalia) with an optional SearXNG instance as final fallback",
+  "version": "1.4.0",
+  "description": "Web search tools for pi, backed by independent engines (mwmbl + Mojeek + marginalia) with keyless DuckDuckGo Lite and an optional SearXNG instance as fallbacks",
   "type": "module",
   "keywords": [
     "pi-package",

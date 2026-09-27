@@ -66,9 +66,12 @@ or does without search. There is no alternative backend available to the agent.
 Replace the SearXNG-backed `web_search` tool with a local pi extension that
 queries independent engines directly. mwmbl (a bot-friendly, open-source,
 keyless index) is the primary engine; Mojeek (UK-based, authenticated via API
-key) is the first fallback, and marginalia (a curated, non-commercial index;
-keyed, defaulting to the shared `public` key) is the second fallback. A
-SearXNG instance (pointed at via `SEARXNG_URL`) is the final fallback: it is
+key) is the first fallback, marginalia (a curated, non-commercial index;
+keyed, defaulting to the shared `public` key) is the second, and keyless
+DuckDuckGo Lite is the third (added 2026-09-27, user request, after the
+independent engines proved unable to answer fresh news and long-tail product
+queries -- see "Alternatives Considered", 2). A SearXNG instance (pointed at
+via `SEARXNG_URL`) is the final fallback: it is
 added back deliberately (2026-08-28, user request), but only as a last resort
 -- a meta-engine re-introduces the shared-egress coupling this package
 removed, so it answers only when every independent engine came up empty. The
@@ -84,11 +87,14 @@ tool also re-provides `fetch_content` and `get_search_results` so the
   engine is queried and its results returned instead.
 - **Mojeek API key** — a credential required by Mojeek's JSON API, supplied via
   environment variable and never stored in source control.
+- **Engine note** — a per-engine failure (suspended upstream, timeout, bot
+  challenge) reported alongside the results, so a degraded or empty answer is
+  never presented as "the web has nothing on this".
 
 ### Mental Model
 
 A single `search()` call fans out to engines in priority order (mwmbl, then
-Mojeek, then marginalia, then searxng), stopping at the first engine that
+Mojeek, then marginalia, then ddg, then searxng), stopping at the first engine that
 returns a non-empty list, and returns one normalised list. Callers — the `web_search`
 tool — never know or care which engine produced a result. Each engine is
 queried only when every higher-priority engine returned zero results, and only
@@ -125,12 +131,25 @@ pull in searxng's breadth on demand without making it the default path.
   setup, but it re-introduces shared-egress coupling; volume stays low
   precisely because only emptied-out queries reach it.
 
+  advertising engine; an HTML endpoint, so a bot challenge must be expected
+  under bursts. Mitigation: requests are serialised at least
+  `DDG_SEARCH_INTERVAL_MS` (default 2000 ms) apart, a challenge is raised as an
+  error so the next engine answers, and the failure is reported as an engine
+  note rather than hidden. If the challenge rate becomes persistent, the
+  engine degrades to "no results" and behaves no worse than the mojeek-only
+  chain.
+- **The DDG Lite HTML shape is stable.** The parser keys on `a.result-link`,
+  `td.result-snippet` and `/l/?uddg=` wrappers. A markup change breaks
+  normalisation; the failure is visible as an engine note, not as silence.
+
 ### Boundaries
 
 In scope:
 
 - `web_search` tool backing mwmbl + Mojeek, with keyless-primary/keyed-fallback
   priority.
+- A keyless DuckDuckGo Lite engine (`ddg`) and per-engine failure notes
+  (`Engine notes:`) on both the chain and the explicit-selection path.
 - `fetch_content` tool (URL fetch + GitHub repo clone), carried over unchanged.
 - `get_search_results` tool (retrieve a prior result set by ID).
 - `get_search_content` tool (page through retained fetched content by
@@ -158,7 +177,13 @@ Out of scope:
 
 2. **Add Brave Search API (keyed) as primary.**
    Rejected by the user on privacy grounds (avoiding US surveillance
-   advertisers); Brave, DuckDuckGo, Google are all American.
+   advertisers); Brave, DuckDuckGo, Google are all American. **Partly
+   superseded 2026-09-27:** the user asked for a keyless DuckDuckGo engine to
+   cover the queries the independent engines miss. The objection to keyed
+   Brave/Google API accounts stands (no account, no key); keyless DDG is read
+   through public HTML, sits after every independent engine, and is throttled,
+   so the default path for a query the independent engines can answer is
+   unchanged.
 
 3. **Scrape Mojeek's public HTML UI (no key).**
    Rejected: the SearXNG engine already does this and Mojeek may throttle
@@ -175,7 +200,8 @@ Out of scope:
 
 ```typescript
 // Internal search function (engine-agnostic)
-search(query: string, limit?: number): Promise<{ results: SearchResult[] }>
+search(query: string, limit?: number, engines?: string[])
+  : Promise<{ results: SearchResult[]; engines: string[]; notes: string[] }>
 
 SearchResult = {
   title: string      // human-readable title; falls back to the URL if absent
@@ -189,7 +215,8 @@ Registered tools (pi `registerTool`):
 ```typescript
 web_search({ query: string, limit?: number, engines?: string[] })
   // -> text: numbered markdown list of results, or "No results found."
-  // -> details: { resultCount, query, engines: string[] }
+  //    followed by an "Engine notes:" line when any engine failed
+  // -> details: { resultCount, query, engines: string[], notes: string[] }
   // engines: query exactly these engines and merge results (round-robin,
   //    deduped by URL); default is the fallback chain
 
@@ -213,6 +240,7 @@ Engine endpoints:
 | mwmbl | `GET https://mwmbl.org/api/v2/search/?q=<query>` | `{ query, number_of_results, results: [{ url, title, title_highlights, content, content_highlights, engine, score }, ...], monthly_usage, monthly_limit }` |
 | mojeek | `GET https://www.mojeek.com/search?q=<query>&fmt=json&api_key=<KEY>` | `{ response: { head: {...}, results: [{ url, title, desc }, ...] } }` |
 | marginalia | `GET https://api.marginalia.nu/<KEY>/search/<query>?format=json&index=0&count=<n>` | `{ license, page, pages, query, results: [{ url, title, description, quality, ... }, ...] }` |
+| ddg | `GET https://lite.duckduckgo.com/lite/?q=<query>` | HTML results table: `a.result-link[href]` with the title, a following `td.result-snippet`, and a `span.link-text` domain. Challenge pages answer HTTP 202 with an `anomaly` body. |
 | searxng | `GET <SEARXNG_URL>?q=<query>&format=json` | `{ query, number_of_results, results: [{ url, title, content, engine, ... }, ...] }` |
 
 Normalisation:
@@ -221,6 +249,9 @@ Normalisation:
   plain concatenated text, superseding the v1 segment-array format).
 - mojeek — `title` -> `title`; `desc` -> `snippet`.
 - marginalia — `title` -> `title`; `description` -> `snippet`.
+- ddg — `result-link` text -> `title`; the following `td.result-snippet` ->
+  `snippet` (whitespace collapsed). A `/l/?uddg=<target>` redirect is unwrapped
+  to `<target>`; every other URL is kept byte-for-byte.
 
 ### Constraints
 
@@ -232,11 +263,23 @@ Normalisation:
   and marginalia remain available in that case.
 - mwmbl MUST be the primary engine and is queried keyless (mwmbl exposes no
   search-scoped API key). Mojeek is queried only when mwmbl returns zero
-  results; marginalia only when both mwmbl and Mojeek return zero results.
+  results; marginalia only when both mwmbl and Mojeek return zero results; ddg
+  only when all three independent engines return zero results; searxng only
+  when everything above has failed or returned nothing.
 - marginalia MAY be queried with the shared `public` key when
   `MARGINALIA_API_KEY` is unset.
 - Both engines' output MUST be normalised to `SearchResult[]` before leaving
   the extension (the caller has no knowledge of the source).
+- `ddg` MUST be keyless (no account, no key) and MUST be queried only after
+  mwmbl, Mojeek and marginalia have all returned zero results, unless the
+  caller selects it explicitly with `engines`. It MUST serialise its requests
+  and space them by at least `DDG_SEARCH_INTERVAL_MS` (default 2000 ms,
+  minimum 500 ms).
+- An engine MUST NOT be reported as "zero results" when it failed. Failures
+  (network error, non-200, timeout, DuckDuckGo bot challenge, SearXNG with a
+  suspended upstream) MUST be recorded in `notes` and shown to the caller.
+- SearXNG MUST report a degraded instance as a failure: an empty result set
+  that also lists `unresponsive_engines` is an error, not an empty web.
 - Result URLs MUST be preserved verbatim (no rewriting, no tracking stripping).
 - The `web_search` tool SHOULD return `No results found.` when both engines
   return zero results, matching the prior observable behaviour.
@@ -251,7 +294,9 @@ Normalisation:
 | all engines return zero | Return `No results found.` |
 | Mojeek reachable but `head` status is an error (e.g. daily limit reached) | Treat as zero results; do not crash |
 | `MOJEEK_API_KEY` unset | Skip Mojeek; mwmbl + marginalia only |
-| Network failure / non-2xx from an engine | Treat that engine as zero results; try the next |
+| Network failure / non-2xx from an engine | Treat that engine as zero results; try the next, and record an engine note |
+| DuckDuckGo answers with a bot challenge (HTTP 202) or `anomaly` body | Raise on that engine; the next engine answers; the caller sees a note |
+| SearXNG returns zero results and lists `unresponsive_engines` | Raise with the upstream reasons; the failure appears as an engine note |
 | `get_search_results` with an unknown ID | Return `Search not found.` |
 | fetch of a URL fails | Return the error message as text |
 
@@ -272,6 +317,20 @@ web_search({ query: "obscure foo" })
 
 web_search({ query: "obscure foo" })   // MOJEEK_API_KEY unset
 -> mwmbl returns []; Mojeek skipped; "No results found."
+
+web_search({ query: "site:docs.python.org TaskGroup" })
+-> mwmbl, Mojeek and marginalia return nothing (no engine but ddg honours a
+   site: filter); ddg returns the canonical page:
+1. **Coroutines and tasks - Python 3.14.7 documentation**
+   https://docs.python.org/3/library/asyncio-task.html
+   Note asyncio.TaskGroup.create_task () is a new alternative ...
+
+web_search({ query: "ffmpeg filter_complex" })   // SearXNG degraded, ddg challenged
+-> "No results found."
+
+   Engine notes: ddg: bot challenge (HTTP 202); retry later or query another
+   engine; searxng: no results; upstream: brave: too many requests,
+   duckduckgo: CAPTCHA, startpage: Suspended: CAPTCHA
 ```
 
 ### Acceptance Criteria
@@ -287,6 +346,16 @@ web_search({ query: "obscure foo" })   // MOJEEK_API_KEY unset
 - [ ] Given a network error from mwmbl, Mojeek is still attempted (and vice
       versa); the tool never throws.
 - [ ] Given the Mojeek key, it appears in no committed file and no tool output.
+- [ ] Given a query only a mainstream index answers (fresh news, a long-tail
+      product, or a `site:` filter), `web_search` returns ddg results after the
+      independent engines come up empty, and the ddg position in the chain is
+      preserved.
+- [ ] Given a DuckDuckGo bot challenge, `web_search` falls through and reports
+      the challenge as an engine note; it never raises to the caller.
+- [ ] Given a degraded SearXNG instance (zero results with
+      `unresponsive_engines`), the upstream reasons appear as an engine note.
+- [ ] ddg requests from one process are spaced by at least
+      `DDG_SEARCH_INTERVAL_MS`.
 - [ ] `fetch_content` retrieves a normal URL and clones a GitHub URL (parity
       with `pi-searxng`).
 - [ ] `get_search_results` returns the cached set for a valid ID and
@@ -296,10 +365,19 @@ web_search({ query: "obscure foo" })   // MOJEEK_API_KEY unset
 
 ---
 
-*Version: 1.2 | Updated: 2026-09-04*
+*Version: 1.3 | Updated: 2026-09-27*
 
 ## Changelog
 
+- 1.3 (2026-09-27): Added a keyless DuckDuckGo Lite engine (`ddg`) ahead of the
+  SearXNG fallback: the mainstream index for queries the independent engines
+  cannot answer, and the only engine that honours `site:` filters. Requests are
+  serialised and spaced (`DDG_SEARCH_INTERVAL_MS`, default 2000 ms), and a bot
+  challenge is reported rather than retried. Added per-engine failure notes:
+  `search()` returns `notes`, `web_search` prints an `Engine notes:` line and
+  reports it in `details`, and the searxng engine now raises (with the upstream
+  reasons) when an empty answer comes with `unresponsive_engines`, instead of
+  presenting a suspended instance as an empty web.
 - 1.2 (2026-09-04): Added `get_search_content` for bounded retrieval over
   fetched pages: `fetch_content` now retains the full extracted markdown and
   returns a `responseId`; `get_search_content` slices it (`offset`/`limit`) or
