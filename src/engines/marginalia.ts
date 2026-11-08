@@ -2,16 +2,17 @@
 import type { Engine, SearchResult } from "../search.js";
 
 // Marginalia is a curated, non-commercial index of "small web" pages. It is
-// NOT part of the default fallback chain: its API is public-key/slow and
-// answers only a modest share of queries while sometimes timing out under
-// bot-prevention, so it never pays to let it block a search. It is kept as a
-// SELECTION-ONLY engine: reachable when the caller explicitly asks for it
-// (`engines: ["marginalia"]`), valued for its novel, non-commercial angle
-// that mainstream indexes filter out.
+// NOT part of the default fallback chain: its API is keyed and slow, and the
+// shared `public` key is heavily rate-limited (429 daily/QPM limits), so it
+// never pays to let it block a search. It is kept as a SELECTION-ONLY engine:
+// reachable when the caller explicitly asks for it (`engines: ["marginalia"]`),
+// valued for its novel, non-commercial angle that mainstream indexes filter
+// out.
 //
-// The code is keyless in the sense that it always makes a request: it falls
-// back to the shared "public" key when MARGINALIA_API_KEY is unset. A private
-// key buys a separate rate limit.
+// Uses the current api2 API (api2.marginalia-search.com), passing the key in
+// the `API-Key` header. The `public` key is shared and rate-limited; an
+// email-obtained key (free, non-commercial; contact@marginalia-search.com) or
+// a paid key lifts that limit and enables custom filters.
 const API_KEY = process.env.MARGINALIA_API_KEY || "public";
 
 interface MarginaliaResult {
@@ -29,18 +30,15 @@ export const searchMarginalia: Engine = {
   available: true,
   selectOnly: true,
   async search(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
-    const url = new URL(
-      `https://api.marginalia.nu/${API_KEY}/search/${encodeURIComponent(query)}`,
-    );
-    url.searchParams.set("format", "json");
-    url.searchParams.set("index", "0");
+    const url = new URL("https://api2.marginalia-search.com/search");
+    url.searchParams.set("query", query);
     url.searchParams.set("count", "20");
 
     const res = await fetch(url.toString(), {
       signal,
       headers: {
-        Accept: "application/json",
-        "User-Agent": "pi-websearch/1.0",
+        "API-Key": API_KEY,
+        "User-Agent": "pi-websearch/1.1",
       },
     });
     if (!res.ok) throw new Error(`marginalia returned ${res.status}`);

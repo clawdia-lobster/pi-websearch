@@ -245,6 +245,7 @@ Engine endpoints:
 | mwmbl | `GET https://mwmbl.org/api/v2/search/?q=<query>` | `{ query, number_of_results, results: [{ url, title, title_highlights, content, content_highlights, engine, score }, ...], monthly_usage, monthly_limit }` |
 | mojeek | `GET https://www.mojeek.com/search?q=<query>&fmt=json&api_key=<KEY>` | `{ response: { head: {...}, results: [{ url, title, desc }, ...] } }` |
 | kagi | `POST https://kagi.com/api/v1/search` (Bearer `KAGI_API_KEY`, JSON body `{ "query": ... }`) | `{ meta, data: { search: [{ url, title, snippet, time, ... }, ...] } }` |
+| marginalia (selection-only) | `GET https://api2.marginalia-search.com/search?query=<query>` (`API-Key` header, `MARGINALIA_API_KEY` or `public`) | `{ query, license, results: [{ url, title, description, ... }, ...] }` |
 | ddg | `GET https://lite.duckduckgo.com/lite/?q=<query>` | HTML results table: `a.result-link[href]` with the title, a following `td.result-snippet`, and a `span.link-text` domain. Challenge pages answer HTTP 202 with an `anomaly` body. |
 | searxng | `GET <SEARXNG_URL>?q=<query>&format=json` | `{ query, number_of_results, results: [{ url, title, content, engine, ... }, ...] }` |
 
@@ -253,6 +254,7 @@ Normalisation:
 - mwmbl — `title` -> `title`; `content` -> `snippet` (the v2 API already returns
   plain concatenated text, superseding the v1 segment-array format).
 - mojeek — `title` -> `title`; `desc` -> `snippet`.
+- marginalia — `title` -> `title`; `description` -> `snippet` (api2 endpoint).
 - kagi — `title` -> `title`; `snippet` -> `snippet` (HTML tags/entities stripped
   to plain text).
 - ddg — `result-link` text -> `title`; the following `td.result-snippet` ->
@@ -380,6 +382,11 @@ web_search({ query: "ffmpeg filter_complex" })   // SearXNG degraded, ddg challe
 *Version: 1.5 | Updated: 2026-11-08*
 
 ## Changelog
+
+- 1.5.1 (2026-11-08): Migrate marginalia from the deprecated
+  `api.marginalia.nu` endpoint (which no longer responds) to the current
+  `api2.marginalia-search.com` API, passing the key in the `API-Key` header.
+  Selection-only status unchanged.
 
 - 1.4 (2026-11-08): Added a keyed Kagi engine (`kagi`) to the fallback
   chain: a paid commercial index (API credit, ~$12 per
