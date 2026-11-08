@@ -6,6 +6,9 @@
 //
 // `path` defaults to SEARCH_STATS_PATH, then ./search-stats.jsonl -- the same
 // resolution the extension uses (src/stats.ts).
+//
+// This file is repo-only (package.json `files` ships `src` alone); run it from
+// a git checkout, which is how pi loads the extension.
 import { readFileSync } from "node:fs";
 import { parseUsage, summarise, statsPath } from "../src/stats.ts";
 
@@ -25,9 +28,11 @@ try {
   process.exit(1);
 }
 
-const records = parseUsage(text);
+const { records, skipped } = parseUsage(text);
 if (records.length === 0) {
-  console.error(`no usage records in ${path}`);
+  console.error(
+    `no usage records in ${path}` + (skipped > 0 ? ` (${skipped} unreadable line(s))` : ""),
+  );
   process.exit(1);
 }
 
@@ -64,6 +69,15 @@ const agentRows = s.agents.map((a) => [
   String(a.results),
 ]);
 printTable(agentHeader, agentRows);
+
+// A lossy meter must not read as a complete one: say what was unreadable, and
+// exit non-zero so a caller piping this into a report cannot ignore it.
+if (skipped > 0) {
+  console.error(
+    `${skipped} unreadable line(s) skipped in ${path}: the totals above are incomplete`,
+  );
+  process.exitCode = 2;
+}
 
 function printTable(head, body) {
   const widths = head.map((h, i) =>

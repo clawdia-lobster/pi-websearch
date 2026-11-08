@@ -265,10 +265,12 @@ Normalisation:
 
 Every completed `search()` call appends one JSON line to the meter file
 (`SEARCH_STATS_PATH`, default `./search-stats.jsonl`; production sets a shared
-absolute path so the whole fleet aggregates into one file -- appends are single
-small writes, which are atomic on a file opened for append, so parallel agents
-need no lock). One line per call, so calls, chain wins and fan-out selections
-are countable without joining rows:
+absolute path so the whole fleet aggregates into one file). Each append is a
+single small write, so on a local filesystem parallel agents need no lock; the
+shared path is an NFS mount, where a torn or lost line is possible, so the
+reader counts unreadable lines instead of presenting a smaller tally as the
+whole story. One line per call, so calls, chain wins and fan-out selections are
+countable without joining rows:
 
 ```json
 {"ts":"2026-11-08T19:49:14.202Z","agent":"nereus","mode":"select","ok":true,"winner":null,"results":10,"attempts":[{"engine":"mwmbl","outcome":"answer","results":44,"ms":96},{"engine":"ddg","outcome":"fail","results":0,"ms":40,"error":"fetch failed"}]}
@@ -282,17 +284,20 @@ are countable without joining rows:
   calls.
 - `attempts[]` holds one entry per engine consulted, in order: outcome
   (`answer`/`empty`/`fail`), that engine's own result count, wall time, and
-  for failures the error message truncated to 200 characters.
+  for failures the error message truncated to 200 characters plus an ellipsis.
 - No query text is stored: a record carries the agent name, engine names,
   counts and timings.
 - `agent` is the `AGENT` environment variable, `unknown` when unset.
 
 `node scripts/usage.mjs [file]` aggregates the meter into per-engine
-attempts/answers/empties/fails/wins and per-agent call volume.
+attempts/answers/empties/fails/wins and per-agent call volume. It prints the
+count of unreadable lines, if any, and exits 2 so an incomplete report is not
+consumed as a complete one.
 
-A call rejected before any engine is consulted (unknown or unconfigured engine
-names) raises to the caller and is not metered: no engine was consulted, so a
-record would claim a call the engines never served.
+A call rejected before any engine is consulted (an empty `engines` list, or
+unknown or unconfigured engine names) raises to the caller and is not metered:
+no engine was consulted, so a record would claim a call the engines never
+served.
 
 ### Constraints
 
@@ -329,11 +334,16 @@ record would claim a call the engines never served.
 - Result URLs MUST be preserved verbatim (no rewriting, no tracking stripping).
 - The usage meter MUST NOT store query text, and MUST NOT make a search fail:
   an unwritable meter is reported once per process on stderr and the search
-  returns normally. A meter MUST NOT be reported as idle when it is broken.
+  returns normally; on a blocking mount the write may delay a search but never
+  raises into it. A meter MUST NOT be reported as idle when it is broken, and a
+  reader MUST NOT present a lossy read as a complete one: unreadable lines are
+  counted and reported.
 - The `web_search` tool SHOULD return `No results found.` when both engines
   return zero results, matching the prior observable behaviour.
 - The `web_search` tool MAY return a maximum of `limit` results (default 10),
-  consistent with the prior `pi-searxng` behaviour.
+  consistent with the prior `pi-searxng` behaviour. `limit` is clamped to at
+  least 1, so a call cannot be recorded as a win while handing the caller
+  nothing.
 
 ### Errors
 
@@ -350,6 +360,7 @@ record would claim a call the engines never served.
 | `get_search_results` with an unknown ID | Return `Search not found.` |
 | fetch of a URL fails | Return the error message as text |
 | Meter file unwritable | Search returns normally; one stderr warning per process |
+| Meter file has unreadable lines | Aggregate the rest; report the count and exit 2 |
 
 ## Verification
 
@@ -413,6 +424,16 @@ web_search({ query: "ffmpeg filter_complex" })   // SearXNG degraded, ddg challe
       `Search not found.` for an unknown ID.
 - [ ] Removing `npm:pi-searxng` from the package list and adding this extension
       leaves all three tools functional.
+- [ ] A chain search that mwmbl answers appends one record with
+      `mode: "chain"`, `winner: "mwmbl"` and a single `answer` attempt.
+- [ ] A chain search where every engine fails appends one record with `ok:
+      false`, no winner, and one `fail` attempt per engine consulted.
+- [ ] An explicit `engines` selection appends `mode: "select"` with
+      `winner: null` and one attempt per selected engine.
+- [ ] A rejected selection (empty, unknown or unconfigured) appends nothing.
+- [ ] `node scripts/usage.mjs <file>` prints the per-engine and per-agent
+      tallies for the records above; `npm test` covers the same paths with
+      stub engines.
 
 ---
 
@@ -420,14 +441,16 @@ web_search({ query: "ffmpeg filter_complex" })   // SearXNG degraded, ddg challe
 
 ## Changelog
 
-- 1.6 (2026-11-08): Added a usage meter. Every `search()` call appends one JSON
-  line to `SEARCH_STATS_PATH` (default `./search-stats.jsonl`) recording the
-  agent, the mode (`chain` or `select`), whether the call answered, the winning
-  engine, the returned result count, and one entry per engine consulted with
-  its outcome (`answer`/`empty`/`fail`), result count, wall time and truncated
-  error. This replaces reconstructing per-engine volume from session
-  transcripts. No query text is stored. `scripts/usage.mjs` aggregates the
-  file; `npm test` runs the writer and aggregation self-checks.
+- 1.6 (2026-11-08): Added a usage meter. Every completed `search()` call
+  appends one JSON line to `SEARCH_STATS_PATH` (default
+  `./search-stats.jsonl`) recording the agent, the mode (`chain` or `select`),
+  whether the call answered, the winning engine, the returned result count,
+  and one entry per engine consulted with its outcome (`answer`/`empty`/
+  `fail`), result count, wall time and truncated error. This replaces
+  reconstructing per-engine volume from session transcripts. No query text is
+  stored. `scripts/usage.mjs` aggregates the file and reports unreadable
+  lines; `npm test` runs the writer, wiring and aggregation self-checks with
+  stub engines. `limit` is clamped to at least 1.
 
 - 1.5.1 (2026-11-08): Migrate marginalia from the deprecated
   `api.marginalia.nu` endpoint (which no longer responds) to the current

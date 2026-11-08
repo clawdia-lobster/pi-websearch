@@ -17,6 +17,7 @@
   "license": "MIT",
   "files": [
     "src",
+    "scripts",
     "package.json",
     "README.md",
     "LICENSE"
@@ -39,6 +40,9 @@
     ]
   },
   "scripts": {
-    "test": "node --test test/*.test.ts"
+    "test": "node --import ./test/ts-resolve.mjs --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=22.18"
   }
 }

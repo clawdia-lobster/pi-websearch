@@ -49,8 +49,10 @@ export type UsageCall = Omit<UsageRecord, "ts" | "agent">;
 // Generic default, like USEFUL_LIST_PATH: ./search-stats.jsonl in the agent's
 // cwd unless SEARCH_STATS_PATH points elsewhere. Production sets a shared
 // absolute path (see /pi/scripts/agent-setup.sh) so the whole fleet aggregates
-// into one file; appends are single small writes, which are atomic on a file
-// opened for append, so parallel agents do not need a lock.
+// into one file. Each append is a single small write, so on a local filesystem
+// parallel agents need no lock; the shared path is an NFS mount, where a torn
+// or lost line is possible -- the reader counts and reports such lines rather
+// than silently presenting a smaller tally as the whole story.
 const DEFAULT_PATH = "search-stats.jsonl";
 const MAX_ERROR_CHARS = 200;
 
@@ -76,50 +78,74 @@ let warned = false;
  */
 export function recordUsage(
   call: UsageCall,
-  path: string = statsPath(),
+  path?: string,
 ): boolean {
-  const record: UsageRecord = {
-    ts: new Date().toISOString(),
-    agent: process.env.AGENT || "unknown",
-    ...call,
-  };
   try {
-    appendFileSync(path, JSON.stringify(record) + "\n", "utf8");
+    const record: UsageRecord = {
+      ts: new Date().toISOString(),
+      agent: process.env.AGENT || "unknown",
+      ...call,
+    };
+    appendFileSync(path ?? statsPath(), JSON.stringify(record) + "\n", "utf8");
     return true;
   } catch (err) {
     if (!warned) {
       warned = true;
       console.error(
-        `pi-websearch: usage meter disabled (${path}): ${errorText(err)}`,
+        `pi-websearch: usage meter disabled (${path ?? statsPath()}): ${errorText(err)}`,
       );
     }
     return false;
   }
 }
 
+/** Records read from a meter file, and how many lines were not records. */
+export interface ParsedUsage {
+  records: UsageRecord[];
+  /** Lines that were not a usage record (torn write, hand edit, other data). */
+  skipped: number;
+}
+
 /**
- * Parse a meter file, skipping lines that are not a usage record so a torn or
- * hand-edited line cannot break the whole report.
+ * Parse a meter file. A line that is not a usage record is skipped rather than
+ * aborting the read, but it is counted: a report that silently drops lines
+ * would present a lossy meter as a complete one.
  */
-export function parseUsage(text: string): UsageRecord[] {
+export function parseUsage(text: string): ParsedUsage {
   const records: UsageRecord[] = [];
+  let skipped = 0;
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
+    let parsed: UsageRecord | null = null;
     try {
-      const parsed = JSON.parse(trimmed) as UsageRecord;
-      if (
-        typeof parsed === "object" &&
-        parsed !== null &&
-        Array.isArray(parsed.attempts)
-      ) {
-        records.push(parsed);
-      }
+      parsed = JSON.parse(trimmed) as UsageRecord;
     } catch {
-      // Skip: one bad line is not a reason to lose the report.
+      parsed = null;
+    }
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      isAttemptList(parsed.attempts)
+    ) {
+      records.push(parsed);
+    } else {
+      skipped++;
     }
   }
-  return records;
+  return { records, skipped };
+}
+
+function isAttemptList(value: unknown): value is UsageAttempt[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (a) =>
+        typeof a === "object" &&
+        a !== null &&
+        typeof (a as UsageAttempt).engine === "string",
+    )
+  );
 }
 
 export interface EngineTally {

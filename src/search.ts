@@ -124,7 +124,24 @@ export async function search(
   query: string,
   options: SearchOptions = {},
 ): Promise<SearchResponse> {
-  const { limit = 10, signal, engines: selected } = options;
+  return searchWithEngines(engines, query, options);
+}
+
+/**
+ * Search a supplied engine registry, applying the fallback and selection rules
+ * and metering the call. `search()` passes the built-in registry; the seam
+ * exists so those rules are testable with stub engines instead of the network.
+ */
+export async function searchWithEngines(
+  registry: Engine[],
+  query: string,
+  options: SearchOptions = {},
+): Promise<SearchResponse> {
+  const { signal, engines: selected } = options;
+  // A limit of zero would hand the caller nothing while the engine's answer is
+  // still recorded, so the meter would report a win on a call that answered
+  // nobody; a negative limit would silently drop the last result.
+  const limit = Math.max(1, options.limit ?? 10);
 
   // Explicit engine selection: query every selected engine, merge results.
   // No fallback outside the selection -- zero merged results means the
@@ -135,13 +152,14 @@ export async function search(
     if (selected.length === 0) {
       throw new Error("engines list must not be empty");
     }
-    const unknown = selected.filter((n) => !ENGINE_NAMES.includes(n));
+    const names = registry.map((e) => e.name);
+    const unknown = selected.filter((n) => !names.includes(n));
     if (unknown.length > 0) {
       throw new Error(
-        `unknown engine(s): ${unknown.join(", ")} (valid: ${ENGINE_NAMES.join(", ")})`,
+        `unknown engine(s): ${unknown.join(", ")} (valid: ${names.join(", ")})`,
       );
     }
-    const chosen = engines.filter((e) => selected.includes(e.name));
+    const chosen = registry.filter((e) => selected.includes(e.name));
     const unavailable = chosen
       .filter((e) => !e.available)
       .map((e) => e.name);
@@ -200,7 +218,7 @@ export async function search(
   const notes: string[] = [];
   const attempts: UsageAttempt[] = [];
 
-  for (const engine of engines) {
+  for (const engine of registry) {
     if (engine.selectOnly) continue;
     if (!engine.available) continue;
     queried.push(engine.name);

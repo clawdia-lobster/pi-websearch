@@ -6,6 +6,9 @@ SearXNG instance. It provides four tools, `web_search`, `fetch_content`,
 `get_search_results`, and `get_search_content`, and is a drop-in replacement
 for `pi-searxng`.
 
+Requires Node 22.18 or newer for the built-in TypeScript support (`engines`
+in `package.json`).
+
 ## Engines
 
 By default search fans out to the engines in priority order and stops at the
@@ -68,6 +71,7 @@ nothing on this".
 | `MARGINALIA_API_KEY` | marginalia (selection-only) | No, defaults to `public` |
 | `USEFUL_LIST_PATH` | useful-list | No, defaults to `./useful-domains.txt` |
 | `SEARCH_STATS_PATH` | usage meter | No, defaults to `./search-stats.jsonl` |
+| `AGENT` | usage meter | No, set by the fleet setup; `unknown` when unset |
 
 Keys are read only from the environment and are never committed, logged, or
 returned in tool output.
@@ -103,13 +107,17 @@ a fetch.
 
 ## Usage meter
 
-Every search appends one JSON line to a meter file (`search-stats.jsonl`;
-configure the location with `SEARCH_STATS_PATH`), so per-engine and per-agent
-volume is measured from inside the extension instead of being reconstructed
-from session transcripts. A line records the agent, whether the call answered,
-the engine that won a fallback chain, and one entry per engine consulted --
-whether it answered, returned nothing, or failed, with its result count and
-wall time. Query text is never stored.
+Every completed search appends one JSON line to a meter file
+(`search-stats.jsonl`; configure the location with `SEARCH_STATS_PATH`), so
+per-engine and per-agent volume is measured from inside the extension instead
+of being reconstructed from session transcripts. A line records the agent,
+whether the call answered, the engine that won a fallback chain, and one entry
+per engine consulted -- whether it answered, returned nothing, or failed, with
+its result count and wall time. Query text is never stored. Per-agent
+attribution uses the `AGENT` environment variable; without it every record
+lands in the `unknown` bucket. A call rejected before any engine runs (an
+empty `engines` list, or unknown or unconfigured names) raises and is not
+metered.
 
 ```sh
 node scripts/usage.mjs            # defaults to $SEARCH_STATS_PATH
@@ -117,9 +125,11 @@ node scripts/usage.mjs /path/to/search-stats.jsonl
 ```
 
 That prints per-engine attempts/answers/empties/fails/wins and per-agent call
-volume. The file is append-only and grows by roughly 300-600 bytes per search;
-rotate or truncate it when it gets large. Meter writing is best-effort: an
-unwritable file warns once on stderr and never breaks a search.
+volume, warns and exits 2 if any line was unreadable. It runs from a git
+checkout: the npm package ships `src` only. The file is append-only and grows
+by roughly 170-300 bytes per search; rotate or truncate it when it gets large.
+Meter writing is best-effort: an unwritable file warns once on stderr and never
+breaks a search.
 
 See [SPEC.md](SPEC.md) for the system specification.
 

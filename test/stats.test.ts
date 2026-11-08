@@ -1,4 +1,4 @@
-// Self-check for the usage meter: node --test test/
+// Self-check for the usage meter's record format and aggregation: npm test
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,8 +23,12 @@ const chainCall = {
   ],
 };
 
+function tempFile(): string {
+  return join(mkdtempSync(join(tmpdir(), "websearch-stats-")), "meter.jsonl");
+}
+
 test("recordUsage appends one parseable line per call", () => {
-  const path = join(mkdtempSync(join(tmpdir(), "websearch-stats-")), "meter.jsonl");
+  const path = tempFile();
   const previous = process.env.AGENT;
   process.env.AGENT = "nereus";
   try {
@@ -52,18 +56,30 @@ test("a broken meter path reports failure instead of throwing", () => {
   assert.equal(recordUsage(chainCall, missing), false);
 });
 
-test("parseUsage skips blank and malformed lines", () => {
+test("parseUsage skips and counts lines that are not records", () => {
   const text = [
     JSON.stringify({ ...chainCall, ts: "2026-11-08T10:00:00.000Z", agent: "nereus" }),
     "",
     "not json",
-    JSON.stringify({ ts: "2026-11-08T11:00:00.000Z", agent: "iris", mode: "select", ok: false, winner: null, results: 0, attempts: [{ engine: "ddg", outcome: "fail", results: 0, ms: 15, error: "ddg returned 500" }] }),
     JSON.stringify({ ts: "2026-11-08T12:00:00.000Z" }),
-    "",
+    JSON.stringify({ attempts: [null] }),
+    JSON.stringify({ attempts: [{}] }),
+    JSON.stringify({
+      ts: "2026-11-08T11:00:00.000Z",
+      agent: "iris",
+      mode: "select",
+      ok: false,
+      winner: null,
+      results: 0,
+      attempts: [{ engine: "ddg", outcome: "fail", results: 0, ms: 15, error: "ddg returned 500" }],
+    }),
   ].join("\n");
-  const records = parseUsage(text);
+
+  const { records, skipped } = parseUsage(text);
   assert.equal(records.length, 2);
+  assert.equal(skipped, 4);
   assert.equal(records[1].agent, "iris");
+  assert.equal(records[1].attempts[0].outcome, "fail");
 });
 
 test("summarise tallies engines, wins and agents", () => {
@@ -140,8 +156,11 @@ test("errorText bounds the stored failure detail", () => {
 });
 
 test("the meter file survives a torn final line", () => {
-  const path = join(mkdtempSync(join(tmpdir(), "websearch-stats-")), "meter.jsonl");
+  const path = tempFile();
   recordUsage(chainCall, path);
   writeFileSync(path, readFileSync(path, "utf8") + '{"ts":"2026-11-08T13:0', "utf8");
-  assert.equal(parseUsage(readFileSync(path, "utf8")).length, 1);
+
+  const { records, skipped } = parseUsage(readFileSync(path, "utf8"));
+  assert.equal(records.length, 1);
+  assert.equal(skipped, 1);
 });
