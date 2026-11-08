@@ -151,8 +151,9 @@ In scope:
 
 - `web_search` tool backing mwmbl + Mojeek, with keyless-primary/keyed-fallback
   priority.
-- A keyless DuckDuckGo Lite engine (`ddg`), a keyed Kagi engine (`kagi`), a
-  selection-only marginalia engine, and per-engine failure notes
+- A keyless DuckDuckGo Lite engine (`ddg`), a keyed Kagi engine (`kagi`),
+  selection-only marginalia and Kagi enrichment placeholder engines
+  (`kagi-enrich-web`/`kagi-enrich-news`), and per-engine failure notes
   (`Engine notes:`) on both the chain and the explicit-selection path.
 - `fetch_content` tool (URL fetch + GitHub repo clone), carried over unchanged.
 - `get_search_results` tool (retrieve a prior result set by ID).
@@ -396,7 +397,10 @@ web_search({ query: "ffmpeg filter_complex" })   // SearXNG degraded, ddg challe
   times it out), but it is reachable on explicit `engines: ["marginalia"]` for
   its non-commercial, small-web angle. The `Engine` type gains a `selectOnly`
   flag that keeps such an engine out of the default chain while leaving it in
-  the selectable registry.
+  the selectable registry. Added `kagi-enrich-web` and `kagi-enrich-news`
+  (Teclis/TinyGem) as selection-only placeholder engines, disabled until Kagi
+  ships a v1 enrichment endpoint they can reach with the extension's v1
+  `KAGI_API_KEY`.
 - 1.3 (2026-09-27): Added a keyless DuckDuckGo Lite engine (`ddg`) ahead of the
   SearXNG fallback: the mainstream index for queries the independent engines
   cannot answer, and the only engine that honours `site:` filters. Requests are

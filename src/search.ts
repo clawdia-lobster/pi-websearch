@@ -3,6 +3,10 @@ import { searchMojeek } from "./engines/mojeek.js";
 import { searchKagi } from "./engines/kagi.js";
 import { searchMarginalia } from "./engines/marginalia.js";
 import { searchDdg } from "./engines/ddg.js";
+import {
+  searchKagiEnrichWeb,
+  searchKagiEnrichNews,
+} from "./engines/kagi-enrich.js";
 import { searchSearxng } from "./engines/searxng.js";
 
 export interface SearchResult {
@@ -51,9 +55,10 @@ export interface Engine {
  * academic and financial lookups without a shared or advertising-backed path.
  * searxng stays last because it re-introduces coupling to a shared instance.
  *
- * Engines flagged `selectOnly` (marginalia) are NOT in this chain: they are
- * excluded from the automatic fallback and only run on explicit `engines`
- * selection.
+ * Engines flagged `selectOnly` (marginalia, kagi-enrich-*) are NOT in this
+ * chain: they are excluded from the automatic fallback and only run on
+ * explicit `engines` selection. The kagi-enrich-* engines are additionally
+ * `available: false` pending a v1 endpoint (see kagi-enrich.ts).
  */
 const engines: Engine[] = [
   searchMwmbl,
@@ -62,6 +67,8 @@ const engines: Engine[] = [
   searchDdg,
   searchSearxng,
   searchMarginalia,
+  searchKagiEnrichWeb,
+  searchKagiEnrichNews,
 ];
 
 export interface SearchOptions {

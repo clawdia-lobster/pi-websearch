@@ -84,7 +84,7 @@ export default function (pi: ExtensionAPI) {
       engines: Type.Optional(
         Type.Array(Type.String(), {
           description:
-            "Query exactly these engines (any of: mwmbl, mojeek, kagi, ddg, searxng, marginalia) and merge their results instead of running the fallback chain. Default: fallback chain (mwmbl, then mojeek, then kagi, then ddg, then searxng). marginalia is selection-only -- it is never an automatic fallback, only an explicit choice",
+            "Query exactly these engines (any of: mwmbl, mojeek, kagi, ddg, searxng, marginalia, kagi-enrich-web, kagi-enrich-news) and merge their results instead of running the fallback chain. Default: fallback chain (mwmbl, then mojeek, then kagi, then ddg, then searxng). marginalia and the kagi-enrich-* engines are selection-only -- never an automatic fallback, only explicit choices (enrich is placeholder until Kagi ships a v1 endpoint)",
         }),
       ),
     }),

@@ -49,6 +49,12 @@ nothing on this".
   it out), but it is queryable on explicit request via `engines: ["marginalia"]`
   for its non-commercial, small-web angle. Uses `MARGINALIA_API_KEY`, falling
   back to the shared `public` key when unset.
+- **kagi-enrich-web** / **kagi-enrich-news** are *selection-only placeholders*
+  for Kagi's Teclis (web) and TinyGem (news) enrichment indexes. They are
+  registered but not yet available: Kagi only exposes enrichment through the
+  legacy v0 API with an old `Bot` token, which this extension's v1 `KAGI_API_KEY`
+  cannot authenticate, and there is no v1 /enrich endpoint yet. They will be
+  enabled when Kagi ships a v1 endpoint (see `src/engines/kagi-enrich.ts`).
 
 ## Configuration
 
