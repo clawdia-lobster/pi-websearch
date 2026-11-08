@@ -1,19 +1,19 @@
 # pi-websearch
 
 Web search for pi that talks to independent engines -- mwmbl, Mojeek, and
-marginalia -- falling back to keyless DuckDuckGo Lite and then an optional
-SearXNG instance. It provides four tools, `web_search`, `fetch_content`,
+marginalia -- falling back to Kagi, then keyless DuckDuckGo Lite, and then an
+optional SearXNG instance. It provides four tools, `web_search`, `fetch_content`,
 `get_search_results`, and `get_search_content`, and is a drop-in replacement
 for `pi-searxng`.
 
 ## Engines
 
 By default search fans out to the engines in priority order and stops at the
-first that returns results: mwmbl, then Mojeek, then marginalia, then ddg, then
-SearXNG.
+first that returns results: mwmbl, then Mojeek, then marginalia, then kagi,
+then ddg, then SearXNG.
 
 The caller can instead select exactly which engines to query by passing
-`engines` to `web_search`, e.g. `["mwmbl", "ddg"]` to skip marginalia.
+`engines` to `web_search`, e.g. `["mwmbl", "ddg"]` to skip the rest.
 Every selected engine is queried and results are merged with round-robin
 interleaving (deduplicated by URL), so each engine contributes; one engine's
 zero results or network failure does not prevent the others from answering.
@@ -29,6 +29,10 @@ nothing on this".
 - **Mojeek** needs `MOJEEK_API_KEY`; it is skipped when that variable is unset.
 - **marginalia** uses `MARGINALIA_API_KEY`, falling back to the shared `public`
   key when unset.
+- **kagi** needs `KAGI_API_KEY`; it is skipped when that variable is unset. It
+  is a paid index (API credit at ~$12 per 1,000 queries), so it sits after the
+  independent engines and is only reached when they all return zero results;
+  its cost is bounded by that fallback position.
 - **ddg** works without a key: DuckDuckGo's Lite HTML endpoint, parsed for
   result titles, snippets and URLs. It is the mainstream-index fallback, and
   the only engine that honours `site:` filters. DuckDuckGo is an American
@@ -49,6 +53,7 @@ nothing on this".
 | --- | --- | --- |
 | `MOJEEK_API_KEY` | Mojeek | Yes, to use Mojeek |
 | `MARGINALIA_API_KEY` | marginalia | No, defaults to `public` |
+| `KAGI_API_KEY` | kagi | Yes, to use kagi |
 | `SEARXNG_URL` | searxng | Yes, to use searxng |
 | `SEARXNG_API_KEY` | searxng | No, only for limiter-enabled instances |
 | `DDG_SEARCH_INTERVAL_MS` | ddg | No, default 2000; minimum 500 |

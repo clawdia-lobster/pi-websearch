@@ -75,7 +75,7 @@ export default function (pi: ExtensionAPI) {
     name: "web_search",
     label: "Web Search",
     description:
-      "Search the web using independent engines (mwmbl, Mojeek, marginalia), with keyless DuckDuckGo Lite and then a SearXNG meta-engine as fallbacks. Pass engines (e.g. [\"mwmbl\",\"ddg\"]) to query exactly those engines and merge their results -- useful when default results are thin or stale",
+      "Search the web using independent engines (mwmbl, Mojeek, marginalia), with Kagi, then keyless DuckDuckGo Lite and finally a SearXNG meta-engine as fallbacks. Pass engines (e.g. [\"mwmbl\",\"kagi\"]) to query exactly those engines and merge their results -- useful when default results are thin or stale",
     parameters: Type.Object({
       query: Type.String({ description: "Search query" }),
       limit: Type.Optional(
@@ -84,7 +84,7 @@ export default function (pi: ExtensionAPI) {
       engines: Type.Optional(
         Type.Array(Type.String(), {
           description:
-            "Query exactly these engines (any of: mwmbl, mojeek, marginalia, ddg, searxng) and merge their results instead of running the fallback chain. Default: fallback chain (mwmbl, then mojeek, then marginalia, then ddg, then searxng)",
+            "Query exactly these engines (any of: mwmbl, mojeek, marginalia, kagi, ddg, searxng) and merge their results instead of running the fallback chain. Default: fallback chain (mwmbl, then mojeek, then marginalia, then kagi, then ddg, then searxng)",
         }),
       ),
     }),

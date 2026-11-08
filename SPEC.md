@@ -67,8 +67,10 @@ Replace the SearXNG-backed `web_search` tool with a local pi extension that
 queries independent engines directly. mwmbl (a bot-friendly, open-source,
 keyless index) is the primary engine; Mojeek (UK-based, authenticated via API
 key) is the first fallback, marginalia (a curated, non-commercial index;
-keyed, defaulting to the shared `public` key) is the second, and keyless
-DuckDuckGo Lite is the third (added 2026-09-27, user request, after the
+keyed, defaulting to the shared `public` key) the second, and a keyed
+Kagi engine (the paid-commercial fallback, added 2026-11-08 on user
+request) the third; keyless
+DuckDuckGo Lite is the fourth (added 2026-09-27, user request, after the
 independent engines proved unable to answer fresh news and long-tail product
 queries -- see "Alternatives Considered", 2). A SearXNG instance (pointed at
 via `SEARXNG_URL`) is the final fallback: it is
@@ -94,12 +96,12 @@ tool also re-provides `fetch_content` and `get_search_results` so the
 ### Mental Model
 
 A single `search()` call fans out to engines in priority order (mwmbl, then
-Mojeek, then marginalia, then ddg, then searxng), stopping at the first engine that
+Mojeek, then marginalia, then kagi, then ddg, then searxng), stopping at the first engine that
 returns a non-empty list, and returns one normalised list. Callers — the `web_search`
 tool — never know or care which engine produced a result. Each engine is
 queried only when every higher-priority engine returned zero results, and only
 engines whose key is available are consulted (mwmbl works keyless; marginalia
-defaults to the `public` key; searxng requires `SEARXNG_URL`).
+defaults to the `public` key; kagi and searxng require their keys/URL).
 
 The caller may instead select an exact engine subset (`engines` parameter):
 every selected engine is queried and results merged round-robin, deduplicated
@@ -148,8 +150,9 @@ In scope:
 
 - `web_search` tool backing mwmbl + Mojeek, with keyless-primary/keyed-fallback
   priority.
-- A keyless DuckDuckGo Lite engine (`ddg`) and per-engine failure notes
-  (`Engine notes:`) on both the chain and the explicit-selection path.
+- A keyless DuckDuckGo Lite engine (`ddg`), a keyed Kagi engine (`kagi`), and
+  per-engine failure notes (`Engine notes:`) on both the chain and the
+  explicit-selection path.
 - `fetch_content` tool (URL fetch + GitHub repo clone), carried over unchanged.
 - `get_search_results` tool (retrieve a prior result set by ID).
 - `get_search_content` tool (page through retained fetched content by
@@ -240,6 +243,7 @@ Engine endpoints:
 | mwmbl | `GET https://mwmbl.org/api/v2/search/?q=<query>` | `{ query, number_of_results, results: [{ url, title, title_highlights, content, content_highlights, engine, score }, ...], monthly_usage, monthly_limit }` |
 | mojeek | `GET https://www.mojeek.com/search?q=<query>&fmt=json&api_key=<KEY>` | `{ response: { head: {...}, results: [{ url, title, desc }, ...] } }` |
 | marginalia | `GET https://api.marginalia.nu/<KEY>/search/<query>?format=json&index=0&count=<n>` | `{ license, page, pages, query, results: [{ url, title, description, quality, ... }, ...] }` |
+| kagi | `POST https://kagi.com/api/v1/search` (Bearer `KAGI_API_KEY`, JSON body `{ "query": ... }`) | `{ meta, data: { search: [{ url, title, snippet, time, ... }, ...] } }` |
 | ddg | `GET https://lite.duckduckgo.com/lite/?q=<query>` | HTML results table: `a.result-link[href]` with the title, a following `td.result-snippet`, and a `span.link-text` domain. Challenge pages answer HTTP 202 with an `anomaly` body. |
 | searxng | `GET <SEARXNG_URL>?q=<query>&format=json` | `{ query, number_of_results, results: [{ url, title, content, engine, ... }, ...] }` |
 
@@ -249,6 +253,7 @@ Normalisation:
   plain concatenated text, superseding the v1 segment-array format).
 - mojeek — `title` -> `title`; `desc` -> `snippet`.
 - marginalia — `title` -> `title`; `description` -> `snippet`.
+- kagi — `title` -> `title`; `snippet` -> `snippet`.
 - ddg — `result-link` text -> `title`; the following `td.result-snippet` ->
   `snippet` (whitespace collapsed). A `/l/?uddg=<target>` redirect is unwrapped
   to `<target>`; every other URL is kept byte-for-byte.
@@ -256,20 +261,24 @@ Normalisation:
 ### Constraints
 
 - Engine API keys MUST be read from environment variables (`MOJEEK_API_KEY`,
-  `MARGINALIA_API_KEY`, `SEARXNG_API_KEY`) and MUST NOT be committed, logged,
-  or returned in tool output. `SEARXNG_URL` is likewise environment-supplied:
-  private instance hostnames do not belong in this repo.
+  `MARGINALIA_API_KEY`, `KAGI_API_KEY`, `SEARXNG_API_KEY`) and MUST NOT be
+  committed, logged, or returned in tool output. `SEARXNG_URL` is likewise
+  environment-supplied: private instance hostnames do not belong in this repo.
 - The Mojeek engine MUST NOT be queried when `MOJEEK_API_KEY` is unset; mwmbl
   and marginalia remain available in that case.
 - mwmbl MUST be the primary engine and is queried keyless (mwmbl exposes no
   search-scoped API key). Mojeek is queried only when mwmbl returns zero
-  results; marginalia only when both mwmbl and Mojeek return zero results; ddg
-  only when all three independent engines return zero results; searxng only
-  when everything above has failed or returned nothing.
+  results; marginalia only when both mwmbl and Mojeek return zero results; kagi
+  only when all three independent engines return zero results; ddg only when
+  those plus kagi return zero results; searxng only when everything above has
+  failed or returned nothing.
 - marginalia MAY be queried with the shared `public` key when
   `MARGINALIA_API_KEY` is unset.
 - Both engines' output MUST be normalised to `SearchResult[]` before leaving
   the extension (the caller has no knowledge of the source).
+- `kagi` MUST NOT be queried when `KAGI_API_KEY` is unset, and MUST be queried
+  only after mwmbl, Mojeek and marginalia have all returned zero results,
+  unless the caller selects it explicitly with `engines`.
 - `ddg` MUST be keyless (no account, no key) and MUST be queried only after
   mwmbl, Mojeek and marginalia have all returned zero results, unless the
   caller selects it explicitly with `engines`. It MUST serialise its requests
@@ -296,6 +305,7 @@ Normalisation:
 | `MOJEEK_API_KEY` unset | Skip Mojeek; mwmbl + marginalia only |
 | Network failure / non-2xx from an engine | Treat that engine as zero results; try the next, and record an engine note |
 | DuckDuckGo answers with a bot challenge (HTTP 202) or `anomaly` body | Raise on that engine; the next engine answers; the caller sees a note |
+| `KAGI_API_KEY` unset | Skip kagi; ddg is the next fallback |
 | SearXNG returns zero results and lists `unresponsive_engines` | Raise with the upstream reasons; the failure appears as an engine note |
 | `get_search_results` with an unknown ID | Return `Search not found.` |
 | fetch of a URL fails | Return the error message as text |
@@ -365,10 +375,16 @@ web_search({ query: "ffmpeg filter_complex" })   // SearXNG degraded, ddg challe
 
 ---
 
-*Version: 1.3 | Updated: 2026-09-27*
+*Version: 1.4 | Updated: 2026-11-08*
 
 ## Changelog
 
+- 1.4 (2026-11-08): Added a keyed Kagi engine (`kagi`) between marginalia and
+  ddg in the fallback chain: a paid commercial index (API credit, ~$12 per
+  1,000 queries) that answers only when the three independent engines have all
+  returned zero results, its cost self-bounded by that fallback position. Keyed
+  via `KAGI_API_KEY` (environment-only, never committed); skipped when unset.
+  Web results come from `data.search` (`url`/`title`/`snippet`).
 - 1.3 (2026-09-27): Added a keyless DuckDuckGo Lite engine (`ddg`) ahead of the
   SearXNG fallback: the mainstream index for queries the independent engines
   cannot answer, and the only engine that honours `site:` filters. Requests are
