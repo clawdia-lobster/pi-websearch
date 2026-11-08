@@ -3,14 +3,16 @@ import type { Engine, SearchResult } from "../search.js";
 
 // Kagi is a paid commercial index with no free tier: each query costs money
 // (API credit, ~$12 per 1,000 queries at the standard rate). It is therefore
-// keyed and sits AFTER the independent engines (mwmbl, Mojeek, marginalia),
-// reachable only when they all return zero results -- its cost is self-bounded
-// by that fallback position. The key comes from the environment
-// (KAGI_API_KEY); without it the engine is unavailable and never queried.
+// keyed and sits AFTER the independent engines (mwmbl, Mojeek), reachable only
+// when they both return zero results -- its cost is self-bounded by that
+// fallback position. The key comes from the environment (KAGI_API_KEY);
+// without it the engine is unavailable and never queried.
 //
 // The v1 Search API is a simple POST with Bearer auth and a JSON body; the
 // web results are under `data.search`, each carrying `url`, `title` and
-// `snippet`.
+// `snippet`. The API marks query terms in `snippet` with HTML (`<strong>`)
+// and may encode entities; snippets are stripped to plain text to match the
+// other engines, whose snippets come back bare.
 
 const API_KEY = process.env.KAGI_API_KEY;
 
@@ -26,6 +28,17 @@ interface KagiResponse {
   data?: {
     search?: KagiResult[];
   };
+}
+
+/** Strip HTML tags and decode entities to plain text. */
+function stripHtml(text: string): string {
+  const decoded = text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+  return decoded.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 }
 
 export const searchKagi: Engine = {
@@ -55,7 +68,7 @@ export const searchKagi: Engine = {
       out.push({
         title: hit.title?.trim() || hit.url,
         url: hit.url,
-        snippet: (hit.snippet ?? "").trim(),
+        snippet: hit.snippet ? stripHtml(hit.snippet) : "",
       });
     }
     return out;
