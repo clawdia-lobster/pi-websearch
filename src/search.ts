@@ -1,6 +1,7 @@
 import { searchMwmbl } from "./engines/mwmbl.js";
 import { searchMojeek } from "./engines/mojeek.js";
 import { searchKagi } from "./engines/kagi.js";
+import { searchMarginalia } from "./engines/marginalia.js";
 import { searchDdg } from "./engines/ddg.js";
 import { searchSearxng } from "./engines/searxng.js";
 
@@ -26,6 +27,13 @@ export interface Engine {
   name: string;
   available: boolean;
   search(query: string, signal?: AbortSignal): Promise<SearchResult[]>;
+  /**
+   * Remote from the default fallback chain: this engine is only reached when
+   * the caller selects it explicitly with `engines`, never as an automatic
+   * fallback. Used for niche or slow/keyless indexes (e.g. marginalia) whose
+   * value is an explicit enquiry, not a blocking default hop.
+   */
+  selectOnly?: boolean;
 }
 
 /**
@@ -42,6 +50,10 @@ export interface Engine {
  * after the independent engines, which answer the majority of technical,
  * academic and financial lookups without a shared or advertising-backed path.
  * searxng stays last because it re-introduces coupling to a shared instance.
+ *
+ * Engines flagged `selectOnly` (marginalia) are NOT in this chain: they are
+ * excluded from the automatic fallback and only run on explicit `engines`
+ * selection.
  */
 const engines: Engine[] = [
   searchMwmbl,
@@ -49,6 +61,7 @@ const engines: Engine[] = [
   searchKagi,
   searchDdg,
   searchSearxng,
+  searchMarginalia,
 ];
 
 export interface SearchOptions {
@@ -151,6 +164,7 @@ export async function search(
   const notes: string[] = [];
 
   for (const engine of engines) {
+    if (engine.selectOnly) continue;
     if (!engine.available) continue;
     queried.push(engine.name);
 

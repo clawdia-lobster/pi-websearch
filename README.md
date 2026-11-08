@@ -44,6 +44,11 @@ nothing on this".
   engines from its own egress, so it is reserved for queries the independent
   engines cannot answer. `SEARXNG_API_KEY` is used when the instance runs its
   bot limiter.
+- **marginalia** is *selection-only*: it is never part of the automatic
+  fallback chain (its public key is slow and bot-prevention sometimes times
+  it out), but it is queryable on explicit request via `engines: ["marginalia"]`
+  for its non-commercial, small-web angle. Uses `MARGINALIA_API_KEY`, falling
+  back to the shared `public` key when unset.
 
 ## Configuration
 
@@ -54,6 +59,7 @@ nothing on this".
 | `SEARXNG_URL` | searxng | Yes, to use searxng |
 | `SEARXNG_API_KEY` | searxng | No, only for limiter-enabled instances |
 | `DDG_SEARCH_INTERVAL_MS` | ddg | No, default 2000; minimum 500 |
+| `MARGINALIA_API_KEY` | marginalia (selection-only) | No, defaults to `public` |
 | `USEFUL_LIST_PATH` | useful-list | No, defaults to `./useful-domains.txt` |
 
 Keys are read only from the environment and are never committed, logged, or

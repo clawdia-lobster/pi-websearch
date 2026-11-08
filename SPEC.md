@@ -106,7 +106,9 @@ The caller may instead select an exact engine subset (`engines` parameter):
 every selected engine is queried and results merged round-robin, deduplicated
 by URL. This exists for the "independent engines answered, but thinly" case —
 e.g. mwmbl returns two weak hits for a fresh-news query — letting the agent
-pull in searxng's breadth on demand without making it the default path.
+pull in searxng's breadth on demand without making it the default path. Some
+engines are *selection-only* (marginalia): they never run in the automatic
+fallback chain and are reached only through explicit `engines` selection.
 
 ### Assumptions & Risks
 
@@ -149,9 +151,9 @@ In scope:
 
 - `web_search` tool backing mwmbl + Mojeek, with keyless-primary/keyed-fallback
   priority.
-- A keyless DuckDuckGo Lite engine (`ddg`), a keyed Kagi engine (`kagi`), and
-  per-engine failure notes (`Engine notes:`) on both the chain and the
-  explicit-selection path.
+- A keyless DuckDuckGo Lite engine (`ddg`), a keyed Kagi engine (`kagi`), a
+  selection-only marginalia engine, and per-engine failure notes
+  (`Engine notes:`) on both the chain and the explicit-selection path.
 - `fetch_content` tool (URL fetch + GitHub repo clone), carried over unchanged.
 - `get_search_results` tool (retrieve a prior result set by ID).
 - `get_search_content` tool (page through retained fetched content by
@@ -282,6 +284,10 @@ Normalisation:
 - An engine MUST NOT be reported as "zero results" when it failed. Failures
   (network error, non-200, timeout, DuckDuckGo bot challenge, SearXNG with a
   suspended upstream) MUST be recorded in `notes` and shown to the caller.
+- A `selectOnly` engine (marginalia) MUST NOT be queried as part of the
+  automatic fallback chain; it MUST be reachable only through explicit
+  `engines` selection, where its failures are reported as notes and its
+  results merged normally.
 - SearXNG MUST report a degraded instance as a failure: an empty result set
   that also lists `unresponsive_engines` is an error, not an empty web.
 - Result URLs MUST be preserved verbatim (no rewriting, no tracking stripping).
@@ -370,7 +376,7 @@ web_search({ query: "ffmpeg filter_complex" })   // SearXNG degraded, ddg challe
 
 ---
 
-*Version: 1.4 | Updated: 2026-11-08*
+*Version: 1.5 | Updated: 2026-11-08*
 
 ## Changelog
 
@@ -380,10 +386,17 @@ web_search({ query: "ffmpeg filter_complex" })   // SearXNG degraded, ddg challe
   returned zero results, its cost self-bounded by that fallback position. Keyed
   via `KAGI_API_KEY` (environment-only, never committed); skipped when unset.
   Web results come from `data.search` (`url`/`title`/`snippet`; HTML stripped).
-  Also removed the `marginalia` engine: it answered only a small share of
-  queries while being the top failure source (timeouts and bot challenges), so
-  it was dropped rather than kept as a dead-weight hop.
+  Removed the `marginalia` engine from the fallback chain: it answered only a
+  small share of queries while being the top failure source (timeouts and bot
+  challenges), so it was dropped as a default hop.
   Chain is now mwmbl -> mojeek -> kagi -> ddg -> searxng.
+- 1.5 (2026-11-08): Extended explicit engine selection with *selection-only*
+  engines. marginalia is restored as a selection-only engine: it is never an
+  automatic fallback (its public key is slow and bot-prevention sometimes
+  times it out), but it is reachable on explicit `engines: ["marginalia"]` for
+  its non-commercial, small-web angle. The `Engine` type gains a `selectOnly`
+  flag that keeps such an engine out of the default chain while leaving it in
+  the selectable registry.
 - 1.3 (2026-09-27): Added a keyless DuckDuckGo Lite engine (`ddg`) ahead of the
   SearXNG fallback: the mainstream index for queries the independent engines
   cannot answer, and the only engine that honours `site:` filters. Requests are
