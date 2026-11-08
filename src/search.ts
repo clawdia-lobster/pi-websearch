@@ -8,6 +8,11 @@ import {
   searchKagiEnrichNews,
 } from "./engines/kagi-enrich.js";
 import { searchSearxng } from "./engines/searxng.js";
+import {
+  errorText,
+  recordUsage,
+  type UsageAttempt,
+} from "./stats.js";
 
 export interface SearchResult {
   title: string;
@@ -119,7 +124,24 @@ export async function search(
   query: string,
   options: SearchOptions = {},
 ): Promise<SearchResponse> {
-  const { limit = 10, signal, engines: selected } = options;
+  return searchWithEngines(engines, query, options);
+}
+
+/**
+ * Search a supplied engine registry, applying the fallback and selection rules
+ * and metering the call. `search()` passes the built-in registry; the seam
+ * exists so those rules are testable with stub engines instead of the network.
+ */
+export async function searchWithEngines(
+  registry: Engine[],
+  query: string,
+  options: SearchOptions = {},
+): Promise<SearchResponse> {
+  const { signal, engines: selected } = options;
+  // A limit of zero would hand the caller nothing while the engine's answer is
+  // still recorded, so the meter would report a win on a call that answered
+  // nobody; a negative limit would silently drop the last result.
+  const limit = Math.max(1, options.limit ?? 10);
 
   // Explicit engine selection: query every selected engine, merge results.
   // No fallback outside the selection -- zero merged results means the
@@ -130,13 +152,14 @@ export async function search(
     if (selected.length === 0) {
       throw new Error("engines list must not be empty");
     }
-    const unknown = selected.filter((n) => !ENGINE_NAMES.includes(n));
+    const names = registry.map((e) => e.name);
+    const unknown = selected.filter((n) => !names.includes(n));
     if (unknown.length > 0) {
       throw new Error(
-        `unknown engine(s): ${unknown.join(", ")} (valid: ${ENGINE_NAMES.join(", ")})`,
+        `unknown engine(s): ${unknown.join(", ")} (valid: ${names.join(", ")})`,
       );
     }
-    const chosen = engines.filter((e) => selected.includes(e.name));
+    const chosen = registry.filter((e) => selected.includes(e.name));
     const unavailable = chosen
       .filter((e) => !e.available)
       .map((e) => e.name);
@@ -149,19 +172,43 @@ export async function search(
     const perEngine: SearchResult[][] = [];
     const queried: string[] = [];
     const notes: string[] = [];
+    const attempts: UsageAttempt[] = [];
     for (const engine of chosen) {
       queried.push(engine.name);
+      const started = Date.now();
       try {
-        perEngine.push(await engine.search(query, engineSignal(signal)));
+        const results = await engine.search(query, engineSignal(signal));
+        attempts.push({
+          engine: engine.name,
+          outcome: results.length > 0 ? "answer" : "empty",
+          results: results.length,
+          ms: Date.now() - started,
+        });
+        perEngine.push(results);
       } catch (err) {
         // Runtime failure of one selected engine must not sink the others,
         // but it is recorded so the caller knows the merge was incomplete.
         notes.push(note(engine.name, err));
+        attempts.push({
+          engine: engine.name,
+          outcome: "fail",
+          results: 0,
+          ms: Date.now() - started,
+          error: errorText(err),
+        });
         perEngine.push([]);
       }
     }
+    const merged = interleave(perEngine).slice(0, limit);
+    recordUsage({
+      mode: "select",
+      ok: merged.length > 0,
+      winner: null,
+      results: merged.length,
+      attempts,
+    });
     return {
-      results: interleave(perEngine).slice(0, limit),
+      results: merged,
       engines: queried,
       notes,
     };
@@ -169,29 +216,66 @@ export async function search(
 
   const queried: string[] = [];
   const notes: string[] = [];
+  const attempts: UsageAttempt[] = [];
 
-  for (const engine of engines) {
+  for (const engine of registry) {
     if (engine.selectOnly) continue;
     if (!engine.available) continue;
     queried.push(engine.name);
+    const started = Date.now();
 
     try {
       const results = await engine.search(query, engineSignal(signal));
+      const ms = Date.now() - started;
       if (results.length > 0) {
+        attempts.push({
+          engine: engine.name,
+          outcome: "answer",
+          results: results.length,
+          ms,
+        });
+        const sliced = results.slice(0, limit);
+        recordUsage({
+          mode: "chain",
+          ok: sliced.length > 0,
+          winner: engine.name,
+          results: sliced.length,
+          attempts,
+        });
         return {
-          results: results.slice(0, limit),
+          results: sliced,
           engines: queried,
           notes,
         };
       }
+      attempts.push({
+        engine: engine.name,
+        outcome: "empty",
+        results: 0,
+        ms,
+      });
     } catch (err) {
       // Treat any engine failure (network, parse, quota) as zero results and
       // fall through to the next engine -- recording why, so the answer is not
       // silently reported as "no results".
       notes.push(note(engine.name, err));
+      attempts.push({
+        engine: engine.name,
+        outcome: "fail",
+        results: 0,
+        ms: Date.now() - started,
+        error: errorText(err),
+      });
     }
   }
 
+  recordUsage({
+    mode: "chain",
+    ok: false,
+    winner: null,
+    results: 0,
+    attempts,
+  });
   return { results: [], engines: queried, notes };
 }
 

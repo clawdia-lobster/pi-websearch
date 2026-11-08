@@ -1,6 +1,6 @@
 {
   "name": "pi-websearch",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Web search tools for pi, backed by independent engines (mwmbl + Mojeek) with Kagi, then keyless DuckDuckGo Lite and an optional SearXNG instance as fallbacks",
   "type": "module",
   "keywords": [
@@ -11,11 +11,13 @@
     "mojeek",
     "kagi",
     "searxng",
-    "github"
+    "github",
+    "usage-meter"
   ],
   "license": "MIT",
   "files": [
     "src",
+    "scripts",
     "package.json",
     "README.md",
     "LICENSE"
@@ -36,5 +38,11 @@
     "extensions": [
       "./src/index.ts"
     ]
+  },
+  "scripts": {
+    "test": "node --import ./test/ts-resolve.mjs --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=22.18"
   }
 }
