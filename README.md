@@ -1,16 +1,16 @@
 # pi-websearch
 
-Web search for pi that talks to independent engines -- mwmbl, Mojeek, and
-marginalia -- falling back to Kagi, then keyless DuckDuckGo Lite, and then an
-optional SearXNG instance. It provides four tools, `web_search`, `fetch_content`,
+Web search for pi that talks to independent engines -- mwmbl and Mojeek --
+falling back to Kagi, then keyless DuckDuckGo Lite, and then an optional
+SearXNG instance. It provides four tools, `web_search`, `fetch_content`,
 `get_search_results`, and `get_search_content`, and is a drop-in replacement
 for `pi-searxng`.
 
 ## Engines
 
 By default search fans out to the engines in priority order and stops at the
-first that returns results: mwmbl, then Mojeek, then marginalia, then kagi,
-then ddg, then SearXNG.
+first that returns results: mwmbl, then Mojeek, then kagi, then ddg, then
+SearXNG.
 
 The caller can instead select exactly which engines to query by passing
 `engines` to `web_search`, e.g. `["mwmbl", "ddg"]` to skip the rest.
@@ -27,11 +27,9 @@ nothing on this".
 
 - **mwmbl** works without a key.
 - **Mojeek** needs `MOJEEK_API_KEY`; it is skipped when that variable is unset.
-- **marginalia** uses `MARGINALIA_API_KEY`, falling back to the shared `public`
-  key when unset.
 - **kagi** needs `KAGI_API_KEY`; it is skipped when that variable is unset. It
   is a paid index (API credit at ~$12 per 1,000 queries), so it sits after the
-  independent engines and is only reached when they all return zero results;
+  independent engines and is only reached when they both return zero results;
   its cost is bounded by that fallback position.
 - **ddg** works without a key: DuckDuckGo's Lite HTML endpoint, parsed for
   result titles, snippets and URLs. It is the mainstream-index fallback, and
@@ -52,7 +50,6 @@ nothing on this".
 | Variable | Engine | Required? |
 | --- | --- | --- |
 | `MOJEEK_API_KEY` | Mojeek | Yes, to use Mojeek |
-| `MARGINALIA_API_KEY` | marginalia | No, defaults to `public` |
 | `KAGI_API_KEY` | kagi | Yes, to use kagi |
 | `SEARXNG_URL` | searxng | Yes, to use searxng |
 | `SEARXNG_API_KEY` | searxng | No, only for limiter-enabled instances |

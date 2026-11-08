@@ -1,6 +1,5 @@
 import { searchMwmbl } from "./engines/mwmbl.js";
 import { searchMojeek } from "./engines/mojeek.js";
-import { searchMarginalia } from "./engines/marginalia.js";
 import { searchKagi } from "./engines/kagi.js";
 import { searchDdg } from "./engines/ddg.js";
 import { searchSearxng } from "./engines/searxng.js";
@@ -32,14 +31,13 @@ export interface Engine {
 /**
  * Engines in priority order. Each is queried only when every higher-priority
  * engine returned zero results. Keyed engines expose `available` based on
- * whether their key is configured (marginalia defaults to the shared "public"
- * key; kagi requires KAGI_API_KEY; mwmbl works keyless but uses a key when
- * provided).
+ * whether their key is configured (kagi requires KAGI_API_KEY; mwmbl works
+ * keyless but uses a key when provided).
  *
  * kagi is a paid index with no free tier; it sits between the independent
  * engines and the mainstream/advertising-backed ones, so its per-query cost is
- * self-bounded: it only fires when mwmbl, Mojeek and marginalia all return
- * zero. ddg (keyless DuckDuckGo Lite) is the mainstream index, and searxng the
+ * self-bounded: it only fires when mwmbl and Mojeek both return zero. ddg
+ * (keyless DuckDuckGo Lite) is the mainstream index, and searxng the
  * meta-engine that federates the same upstreams from its own egress; both sit
  * after the independent engines, which answer the majority of technical,
  * academic and financial lookups without a shared or advertising-backed path.
@@ -48,7 +46,6 @@ export interface Engine {
 const engines: Engine[] = [
   searchMwmbl,
   searchMojeek,
-  searchMarginalia,
   searchKagi,
   searchDdg,
   searchSearxng,
@@ -67,9 +64,9 @@ export interface SearchOptions {
   engines?: string[];
 }
 
-// Hard per-engine budget: some engines (marginalia with certain queries,
-// rate-limited public keys) stall connections indefinitely. Without this,
-// one stalled engine would wedge the whole search forever.
+// Hard per-engine budget: some engines (rate-limited public queries) stall
+// connections indefinitely. Without this, one stalled engine would wedge the
+// whole search forever.
 const ENGINE_TIMEOUT_MS = 15000;
 
 function engineSignal(signal?: AbortSignal): AbortSignal {
