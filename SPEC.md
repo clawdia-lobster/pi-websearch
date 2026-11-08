@@ -261,6 +261,39 @@ Normalisation:
   `snippet` (whitespace collapsed). A `/l/?uddg=<target>` redirect is unwrapped
   to `<target>`; every other URL is kept byte-for-byte.
 
+### Usage meter
+
+Every completed `search()` call appends one JSON line to the meter file
+(`SEARCH_STATS_PATH`, default `./search-stats.jsonl`; production sets a shared
+absolute path so the whole fleet aggregates into one file -- appends are single
+small writes, which are atomic on a file opened for append, so parallel agents
+need no lock). One line per call, so calls, chain wins and fan-out selections
+are countable without joining rows:
+
+```json
+{"ts":"2026-11-08T19:49:14.202Z","agent":"nereus","mode":"select","ok":true,"winner":null,"results":10,"attempts":[{"engine":"mwmbl","outcome":"answer","results":44,"ms":96},{"engine":"ddg","outcome":"fail","results":0,"ms":40,"error":"fetch failed"}]}
+```
+
+- `mode` is `chain` (automatic fallback) or `select` (explicit `engines`).
+- `ok` is whether the call handed at least one result to the caller; `results`
+  is that count after the limit, while `attempts[].results` is what the engine
+  itself returned.
+- `winner` names the engine that answered a chain, and is `null` for select
+  calls.
+- `attempts[]` holds one entry per engine consulted, in order: outcome
+  (`answer`/`empty`/`fail`), that engine's own result count, wall time, and
+  for failures the error message truncated to 200 characters.
+- No query text is stored: a record carries the agent name, engine names,
+  counts and timings.
+- `agent` is the `AGENT` environment variable, `unknown` when unset.
+
+`node scripts/usage.mjs [file]` aggregates the meter into per-engine
+attempts/answers/empties/fails/wins and per-agent call volume.
+
+A call rejected before any engine is consulted (unknown or unconfigured engine
+names) raises to the caller and is not metered: no engine was consulted, so a
+record would claim a call the engines never served.
+
 ### Constraints
 
 - Engine API keys MUST be read from environment variables (`MOJEEK_API_KEY`,
@@ -294,6 +327,9 @@ Normalisation:
 - SearXNG MUST report a degraded instance as a failure: an empty result set
   that also lists `unresponsive_engines` is an error, not an empty web.
 - Result URLs MUST be preserved verbatim (no rewriting, no tracking stripping).
+- The usage meter MUST NOT store query text, and MUST NOT make a search fail:
+  an unwritable meter is reported once per process on stderr and the search
+  returns normally. A meter MUST NOT be reported as idle when it is broken.
 - The `web_search` tool SHOULD return `No results found.` when both engines
   return zero results, matching the prior observable behaviour.
 - The `web_search` tool MAY return a maximum of `limit` results (default 10),
@@ -313,6 +349,7 @@ Normalisation:
 | SearXNG returns zero results and lists `unresponsive_engines` | Raise with the upstream reasons; the failure appears as an engine note |
 | `get_search_results` with an unknown ID | Return `Search not found.` |
 | fetch of a URL fails | Return the error message as text |
+| Meter file unwritable | Search returns normally; one stderr warning per process |
 
 ## Verification
 
@@ -379,9 +416,18 @@ web_search({ query: "ffmpeg filter_complex" })   // SearXNG degraded, ddg challe
 
 ---
 
-*Version: 1.5 | Updated: 2026-11-08*
+*Version: 1.6 | Updated: 2026-11-08*
 
 ## Changelog
+
+- 1.6 (2026-11-08): Added a usage meter. Every `search()` call appends one JSON
+  line to `SEARCH_STATS_PATH` (default `./search-stats.jsonl`) recording the
+  agent, the mode (`chain` or `select`), whether the call answered, the winning
+  engine, the returned result count, and one entry per engine consulted with
+  its outcome (`answer`/`empty`/`fail`), result count, wall time and truncated
+  error. This replaces reconstructing per-engine volume from session
+  transcripts. No query text is stored. `scripts/usage.mjs` aggregates the
+  file; `npm test` runs the writer and aggregation self-checks.
 
 - 1.5.1 (2026-11-08): Migrate marginalia from the deprecated
   `api.marginalia.nu` endpoint (which no longer responds) to the current

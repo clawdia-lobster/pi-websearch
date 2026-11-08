@@ -8,6 +8,11 @@ import {
   searchKagiEnrichNews,
 } from "./engines/kagi-enrich.js";
 import { searchSearxng } from "./engines/searxng.js";
+import {
+  errorText,
+  recordUsage,
+  type UsageAttempt,
+} from "./stats.js";
 
 export interface SearchResult {
   title: string;
@@ -149,19 +154,43 @@ export async function search(
     const perEngine: SearchResult[][] = [];
     const queried: string[] = [];
     const notes: string[] = [];
+    const attempts: UsageAttempt[] = [];
     for (const engine of chosen) {
       queried.push(engine.name);
+      const started = Date.now();
       try {
-        perEngine.push(await engine.search(query, engineSignal(signal)));
+        const results = await engine.search(query, engineSignal(signal));
+        attempts.push({
+          engine: engine.name,
+          outcome: results.length > 0 ? "answer" : "empty",
+          results: results.length,
+          ms: Date.now() - started,
+        });
+        perEngine.push(results);
       } catch (err) {
         // Runtime failure of one selected engine must not sink the others,
         // but it is recorded so the caller knows the merge was incomplete.
         notes.push(note(engine.name, err));
+        attempts.push({
+          engine: engine.name,
+          outcome: "fail",
+          results: 0,
+          ms: Date.now() - started,
+          error: errorText(err),
+        });
         perEngine.push([]);
       }
     }
+    const merged = interleave(perEngine).slice(0, limit);
+    recordUsage({
+      mode: "select",
+      ok: merged.length > 0,
+      winner: null,
+      results: merged.length,
+      attempts,
+    });
     return {
-      results: interleave(perEngine).slice(0, limit),
+      results: merged,
       engines: queried,
       notes,
     };
@@ -169,29 +198,66 @@ export async function search(
 
   const queried: string[] = [];
   const notes: string[] = [];
+  const attempts: UsageAttempt[] = [];
 
   for (const engine of engines) {
     if (engine.selectOnly) continue;
     if (!engine.available) continue;
     queried.push(engine.name);
+    const started = Date.now();
 
     try {
       const results = await engine.search(query, engineSignal(signal));
+      const ms = Date.now() - started;
       if (results.length > 0) {
+        attempts.push({
+          engine: engine.name,
+          outcome: "answer",
+          results: results.length,
+          ms,
+        });
+        const sliced = results.slice(0, limit);
+        recordUsage({
+          mode: "chain",
+          ok: sliced.length > 0,
+          winner: engine.name,
+          results: sliced.length,
+          attempts,
+        });
         return {
-          results: results.slice(0, limit),
+          results: sliced,
           engines: queried,
           notes,
         };
       }
+      attempts.push({
+        engine: engine.name,
+        outcome: "empty",
+        results: 0,
+        ms,
+      });
     } catch (err) {
       // Treat any engine failure (network, parse, quota) as zero results and
       // fall through to the next engine -- recording why, so the answer is not
       // silently reported as "no results".
       notes.push(note(engine.name, err));
+      attempts.push({
+        engine: engine.name,
+        outcome: "fail",
+        results: 0,
+        ms: Date.now() - started,
+        error: errorText(err),
+      });
     }
   }
 
+  recordUsage({
+    mode: "chain",
+    ok: false,
+    winner: null,
+    results: 0,
+    attempts,
+  });
   return { results: [], engines: queried, notes };
 }
 
