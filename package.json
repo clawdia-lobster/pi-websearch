@@ -1,6 +1,6 @@
 {
   "name": "pi-websearch",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Web search tools for pi, backed by independent engines (mwmbl + Mojeek) with Kagi, then keyless DuckDuckGo Lite and an optional SearXNG instance as fallbacks",
   "type": "module",
   "keywords": [

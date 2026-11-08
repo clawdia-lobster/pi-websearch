@@ -125,11 +125,12 @@ node scripts/usage.mjs /path/to/search-stats.jsonl
 ```
 
 That prints per-engine attempts/answers/empties/fails/wins and per-agent call
-volume, warns and exits 2 if any line was unreadable. It runs from a git
-checkout: the npm package ships `src` only. The file is append-only and grows
-by roughly 170-300 bytes per search; rotate or truncate it when it gets large.
-Meter writing is best-effort: an unwritable file warns once on stderr and never
-breaks a search.
+volume, warns and exits 2 if any line was unreadable. It runs from the installed
+package (pi checks the git tag out under `/pi/<agent>/git/...`), so the command
+is `node scripts/usage.mjs` inside that checkout. The file is append-only and
+grows by roughly 170-300 bytes per search; rotate or truncate it when it gets
+large. Meter writing is best-effort: an unwritable file warns once on stderr and
+never breaks a search.
 
 See [SPEC.md](SPEC.md) for the system specification.
 

@@ -437,9 +437,13 @@ web_search({ query: "ffmpeg filter_complex" })   // SearXNG degraded, ddg challe
 
 ---
 
-*Version: 1.6 | Updated: 2026-11-08*
+*Version: 1.6.1 | Updated: 2026-11-08*
 
 ## Changelog
+
+- 1.6.1 (2026-11-08): Documentation fix: the README described the usage
+  aggregator as git-checkout-only while `package.json` ships `scripts/` in the
+  tarball. Both statements are now accurate; no code change.
 
 - 1.6 (2026-11-08): Added a usage meter. Every completed `search()` call
   appends one JSON line to `SEARCH_STATS_PATH` (default
